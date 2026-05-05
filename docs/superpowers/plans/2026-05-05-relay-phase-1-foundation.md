@@ -174,8 +174,10 @@ Accept defaults: `New York` style, `Slate` base color, CSS variables.
 - [ ] **Step 2: Add the components we need**
 
 ```bash
-pnpm dlx shadcn@latest add button card input label form
+pnpm dlx shadcn@latest add button card input label
 ```
+
+(`form` requires `react-hook-form`; deferred to Phase 2 when the campaign wizard needs it. Phase 1's onboarding form uses a plain server action and doesn't need the wrapper.)
 
 - [ ] **Step 3: Verify by importing into the homepage**
 
