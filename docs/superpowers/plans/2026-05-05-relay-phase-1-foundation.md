@@ -675,7 +675,7 @@ git commit -m "feat(db): apply initial migration (10 tables, 7 enums)"
 ## Task 6: Set up Clerk authentication
 
 **Files:**
-- Create: `src/middleware.ts`, `src/app/sign-in/[[...sign-in]]/page.tsx`, `src/app/sign-up/[[...sign-up]]/page.tsx`
+- Create: `src/proxy.ts`, `src/app/sign-in/[[...sign-in]]/page.tsx`, `src/app/sign-up/[[...sign-up]]/page.tsx`
 - Modify: `src/app/layout.tsx`
 
 - [ ] **Step 1: Wrap root layout with `ClerkProvider`**
@@ -705,7 +705,7 @@ export default function RootLayout({
 }
 ```
 
-- [ ] **Step 2: Create `src/middleware.ts`**
+- [ ] **Step 2: Create `src/proxy.ts`** (Clerk renamed middleware → proxy in late 2025; the file MUST be named `proxy.ts`)
 
 ```ts
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
@@ -960,7 +960,7 @@ git commit -m "feat(auth): mirror Clerk users into local users table on sign-up"
 
 **Files:**
 - Create: `src/app/onboarding/page.tsx`, `src/app/onboarding/actions.ts`
-- Modify: `src/middleware.ts` (add onboarding redirect logic)
+- Modify: `src/proxy.ts` (add onboarding redirect logic)
 - Modify: `src/lib/auth.ts` (add `getCurrentUserRow` helper)
 
 We need to redirect signed-in users without a `postal_address` to `/onboarding`. CAN-SPAM requires this address before any campaign can launch, so it's mandatory at sign-up.
@@ -1078,7 +1078,7 @@ export default async function OnboardingPage() {
 
 - [ ] **Step 4: Update middleware to gate `/dashboard` behind onboarding**
 
-We *can't* query the DB from middleware (it runs on the edge). Instead, we redirect from a server component on `/dashboard`. Add this check to the dashboard layout in Task 9 — but for now, in `src/middleware.ts`, leave it as-is. The dashboard layout will handle the postal-address gate.
+We *can't* query the DB from middleware (it runs on the edge). Instead, we redirect from a server component on `/dashboard`. Add this check to the dashboard layout in Task 9 — but for now, in `src/proxy.ts`, leave it as-is. The dashboard layout will handle the postal-address gate.
 
 - [ ] **Step 5: Manually verify**
 
@@ -1147,7 +1147,7 @@ export function Topbar() {
   return (
     <header className="flex h-14 items-center justify-between border-b px-6">
       <div className="text-sm text-muted-foreground">Cold email, grounded.</div>
-      <UserButton afterSignOutUrl="/" />
+      <UserButton />
     </header>
   );
 }
