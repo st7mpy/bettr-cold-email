@@ -5,28 +5,37 @@
 const ALGO = { name: "AES-GCM", length: 256 } as const;
 const IV_BYTES = 12;
 
-function getKeyBytes(): Uint8Array {
+function getKeyArrayBuffer(): ArrayBuffer {
   const raw = process.env.ENCRYPTION_KEY;
   if (!raw) throw new Error("ENCRYPTION_KEY is not set");
   const buf = Buffer.from(raw, "base64");
   if (buf.length !== 32) {
     throw new Error("ENCRYPTION_KEY must decode to 32 bytes (256-bit key)");
   }
-  return new Uint8Array(buf);
+  // Copy into a fresh ArrayBuffer to avoid SharedArrayBuffer type issues
+  const out = new ArrayBuffer(32);
+  new Uint8Array(out).set(buf);
+  return out;
 }
 
 async function importKey(): Promise<CryptoKey> {
-  return crypto.subtle.importKey("raw", getKeyBytes(), ALGO, false, [
+  return crypto.subtle.importKey("raw", getKeyArrayBuffer(), ALGO, false, [
     "encrypt",
     "decrypt",
   ]);
+}
+
+function toArrayBuffer(view: Uint8Array): ArrayBuffer {
+  const out = new ArrayBuffer(view.byteLength);
+  new Uint8Array(out).set(view);
+  return out;
 }
 
 export async function encryptToken(plaintext: string): Promise<string> {
   const key = await importKey();
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
   const ct = await crypto.subtle.encrypt(
-    { ...ALGO, iv },
+    { ...ALGO, iv: toArrayBuffer(iv) },
     key,
     new TextEncoder().encode(plaintext)
   );
@@ -39,6 +48,10 @@ export async function decryptToken(wrapped: string): Promise<string> {
   const iv = new Uint8Array(buf.subarray(0, IV_BYTES));
   const ct = new Uint8Array(buf.subarray(IV_BYTES));
   const key = await importKey();
-  const pt = await crypto.subtle.decrypt({ ...ALGO, iv }, key, ct);
+  const pt = await crypto.subtle.decrypt(
+    { ...ALGO, iv: toArrayBuffer(iv) },
+    key,
+    toArrayBuffer(ct)
+  );
   return new TextDecoder().decode(pt);
 }
