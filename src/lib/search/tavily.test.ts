@@ -32,6 +32,21 @@ describe("tavilySearch", () => {
     expect(out[0].url).toBe("https://example.com/a");
   });
 
+  it("sends API key as Authorization header, not in request body", async () => {
+    let authHeader: string | null = null;
+    let bodyKeys: string[] = [];
+    server.use(
+      http.post("https://api.tavily.com/search", async ({ request }) => {
+        authHeader = request.headers.get("Authorization");
+        bodyKeys = Object.keys((await request.json()) as object);
+        return HttpResponse.json({ results: [] });
+      })
+    );
+    await tavilySearch({ query: "test" });
+    expect(authHeader).toBe("Bearer tvly-test");
+    expect(bodyKeys).not.toContain("api_key");
+  });
+
   it("throws on non-2xx", async () => {
     server.use(
       http.post("https://api.tavily.com/search", () =>
@@ -57,6 +72,21 @@ describe("tavilyExtract", () => {
     expect(out).toEqual([
       { url: "https://example.com/a", content: "# heading\n\nbody" },
     ]);
+  });
+
+  it("sends API key as Authorization header, not in request body", async () => {
+    let authHeader: string | null = null;
+    let bodyKeys: string[] = [];
+    server.use(
+      http.post("https://api.tavily.com/extract", async ({ request }) => {
+        authHeader = request.headers.get("Authorization");
+        bodyKeys = Object.keys((await request.json()) as object);
+        return HttpResponse.json({ results: [] });
+      })
+    );
+    await tavilyExtract(["https://example.com/a"]);
+    expect(authHeader).toBe("Bearer tvly-test");
+    expect(bodyKeys).not.toContain("api_key");
   });
 
   it("returns [] for empty url list (skips API call)", async () => {
