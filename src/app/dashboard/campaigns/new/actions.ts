@@ -1,0 +1,176 @@
+"use server";
+
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import { db } from "@/db";
+import { campaigns, sequenceSteps, leads, emailAccounts, users } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
+import { parseCsv } from "@/lib/csv/parse";
+import { inngest } from "@/inngest/client";
+
+interface CreateInput {
+  name: string;
+  goalText: string;
+  senderPersona: string;
+  valueProp: string;
+  intentPrompt: string;
+  csvText: string;
+}
+
+function validate(i: CreateInput) {
+  if (i.name.trim().length < 2) throw new Error("Campaign name is required");
+  if (i.senderPersona.trim().length < 10)
+    throw new Error("Sender persona must be at least 10 chars");
+  if (i.valueProp.trim().length < 10)
+    throw new Error("Value prop must be at least 10 chars");
+  if (i.intentPrompt.trim().length < 10)
+    throw new Error("Intent prompt must be at least 10 chars");
+  if (!i.csvText.trim()) throw new Error("CSV is empty");
+}
+
+export async function createCampaign(formData: FormData): Promise<void> {
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
+
+  // Require an active Gmail connection
+  const [account] = await db
+    .select()
+    .from(emailAccounts)
+    .where(
+      and(eq(emailAccounts.userId, userId), eq(emailAccounts.status, "active"))
+    );
+  if (!account) {
+    redirect("/dashboard/settings?error=no_account");
+  }
+
+  // Make sure the user row exists (defensive — should always be true after onboarding)
+  await db
+    .insert(users)
+    .values({ id: userId, email: "(set-by-clerk-webhook)" })
+    .onConflictDoNothing();
+
+  const input: CreateInput = {
+    name: String(formData.get("name") ?? ""),
+    goalText: String(formData.get("goalText") ?? ""),
+    senderPersona: String(formData.get("senderPersona") ?? ""),
+    valueProp: String(formData.get("valueProp") ?? ""),
+    intentPrompt: String(formData.get("intentPrompt") ?? ""),
+    csvText: String(formData.get("csvText") ?? ""),
+  };
+  validate(input);
+
+  const parsed = parseCsv(input.csvText);
+  if (parsed.leads.length === 0) {
+    throw new Error(
+      `CSV had no usable rows (${parsed.rejected.length} rejected)`
+    );
+  }
+
+  // Insert campaign + sequence_step + leads in a single transaction
+  const campaignId = await db.transaction(async (tx) => {
+    const [campaign] = await tx
+      .insert(campaigns)
+      .values({
+        userId,
+        name: input.name.trim(),
+        goalText: input.goalText.trim() || null,
+        senderPersona: input.senderPersona.trim(),
+        valueProp: input.valueProp.trim(),
+        status: "draft",
+      })
+      .returning({ id: campaigns.id });
+
+    await tx.insert(sequenceSteps).values({
+      campaignId: campaign.id,
+      stepIndex: 0,
+      intentPrompt: input.intentPrompt.trim(),
+      delayDays: 0,
+    });
+
+    await tx.insert(leads).values(
+      parsed.leads.map((l) => ({
+        campaignId: campaign.id,
+        email: l.email,
+        name: l.name,
+        company: l.company,
+        title: l.title,
+        notes: l.notes,
+        customFields: l.customFields,
+        status: "pending" as const,
+      }))
+    );
+
+    return campaign.id;
+  });
+
+  redirect(`/dashboard/campaigns/${campaignId}`);
+}
+
+export async function generateSamples(campaignId: string): Promise<void> {
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
+
+  const [campaign] = await db
+    .select()
+    .from(campaigns)
+    .where(
+      and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId))
+    );
+  if (!campaign) throw new Error("campaign not found");
+
+  // Pick up to 3 random pending leads
+  const pending = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(
+      and(eq(leads.campaignId, campaignId), eq(leads.status, "pending"))
+    )
+    .limit(50);
+
+  const sample = pending
+    .sort(() => Math.random() - 0.5)
+    .slice(0, 3)
+    .map((l) => l.id);
+
+  await Promise.all(
+    sample.map((leadId) =>
+      inngest.send({ name: "lead/process", data: { leadId } })
+    )
+  );
+
+  redirect(`/dashboard/campaigns/${campaignId}?sampling=1`);
+}
+
+export async function launchCampaign(campaignId: string): Promise<void> {
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
+
+  const [campaign] = await db
+    .select()
+    .from(campaigns)
+    .where(
+      and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId))
+    );
+  if (!campaign) throw new Error("campaign not found");
+
+  // Fan out one event per pending lead
+  const pending = await db
+    .select({ id: leads.id })
+    .from(leads)
+    .where(
+      and(eq(leads.campaignId, campaignId), eq(leads.status, "pending"))
+    );
+
+  await Promise.all(
+    pending.map((l) =>
+      inngest.send({ name: "lead/process", data: { leadId: l.id } })
+    )
+  );
+
+  await db
+    .update(campaigns)
+    .set({ status: "launched", launchedAt: new Date() })
+    .where(eq(campaigns.id, campaignId));
+
+  redirect(`/dashboard/campaigns/${campaignId}?launched=1`);
+}

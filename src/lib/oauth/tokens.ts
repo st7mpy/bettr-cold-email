@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { emailAccounts } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { decryptToken, encryptToken } from "@/lib/crypto/encrypt";
 import { getGoogleClient } from "@/lib/oauth/google";
 
@@ -25,6 +25,8 @@ export async function getAccessTokenForAccount(
     return decryptToken(row.oauthAccessToken);
   }
 
+  const originalCipher = row.oauthAccessToken;
+
   const refreshToken = await decryptToken(row.oauthRefreshToken);
   const tokens = await getGoogleClient().refreshAccessToken(refreshToken);
   const newAccess = tokens.accessToken();
@@ -41,14 +43,35 @@ export async function getAccessTokenForAccount(
     // refreshToken() throws if not present — leave stored value alone
   }
 
-  await db
+  // Optimistic lock: only persist our newly-refreshed token if no other
+  // process beat us to it. WHERE oauthAccessToken = <original ciphertext>
+  // ensures we lose the race silently when a concurrent refresh has already
+  // written a fresher token. In that case we re-read and return the winner's
+  // value rather than racing past it with a stale reissue.
+  const updated = await db
     .update(emailAccounts)
     .set({
       oauthAccessToken: await encryptToken(newAccess),
       oauthRefreshToken: nextRefreshEncrypted,
       oauthExpiresAt: newExpiresAt,
     })
-    .where(eq(emailAccounts.id, accountId));
+    .where(
+      and(
+        eq(emailAccounts.id, accountId),
+        eq(emailAccounts.oauthAccessToken, originalCipher)
+      )
+    )
+    .returning({ id: emailAccounts.id });
+
+  if (updated.length === 0) {
+    // Lost the race — another process refreshed first. Re-read and return
+    // whatever is canonical now.
+    const [reread] = await db
+      .select()
+      .from(emailAccounts)
+      .where(eq(emailAccounts.id, accountId));
+    return decryptToken(reread.oauthAccessToken);
+  }
 
   return newAccess;
 }

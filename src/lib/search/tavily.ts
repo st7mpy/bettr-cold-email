@@ -24,9 +24,11 @@ export async function tavilySearch(args: {
 }): Promise<TavilyResult[]> {
   const res = await fetch(SEARCH_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key()}`,
+    },
     body: JSON.stringify({
-      api_key: key(),
       query: args.query,
       max_results: args.maxResults ?? 5,
       search_depth: "basic",
@@ -45,8 +47,11 @@ export async function tavilyExtract(
   if (urls.length === 0) return [];
   const res = await fetch(EXTRACT_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ api_key: key(), urls }),
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key()}`,
+    },
+    body: JSON.stringify({ urls }),
   });
   if (!res.ok) {
     throw new Error(`Tavily extract ${res.status}: ${await res.text()}`);
