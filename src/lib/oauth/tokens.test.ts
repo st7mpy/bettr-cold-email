@@ -95,6 +95,30 @@ describe("getAccessTokenForAccount", () => {
     expect(await decryptToken(after.oauthRefreshToken)).toBe("REFRESH-ROTATED");
   });
 
+  it("returns the concurrently-written token when the optimistic lock prevents our write", async () => {
+    const row = await seed({ expiresInSeconds: 30 });
+
+    mockRefreshAccessToken.mockImplementationOnce(async () => {
+      // Simulate a concurrent process winning the race by updating the row
+      await db
+        .update(emailAccounts)
+        .set({
+          oauthAccessToken: await encryptToken("CONCURRENT-ACCESS"),
+          oauthExpiresAt: new Date(Date.now() + 3600_000),
+        })
+        .where(eq(emailAccounts.id, row.id));
+
+      return {
+        accessToken: () => "OUR-ACCESS",
+        accessTokenExpiresAt: () => new Date(Date.now() + 3600_000),
+        refreshToken: () => "REFRESH-XYZ",
+      };
+    });
+
+    const token = await getAccessTokenForAccount(row.id);
+    expect(token).toBe("CONCURRENT-ACCESS");
+  });
+
   it("throws if account is not active", async () => {
     const row = await seed({ expiresInSeconds: 3600 });
     await db
