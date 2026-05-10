@@ -6,6 +6,7 @@ import { db } from "@/db";
 import { campaigns, sequenceSteps, leads, emailAccounts, users } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { parseCsv } from "@/lib/csv/parse";
+import { parseStepsFromFormData } from "@/lib/campaign/parse-steps";
 import { inngest } from "@/inngest/client";
 
 interface CreateInput {
@@ -13,8 +14,6 @@ interface CreateInput {
   goalText: string;
   senderPersona: string;
   valueProp: string;
-  intentPrompt: string;
-  csvText: string;
 }
 
 function validate(i: CreateInput) {
@@ -23,27 +22,20 @@ function validate(i: CreateInput) {
     throw new Error("Sender persona must be at least 10 chars");
   if (i.valueProp.trim().length < 10)
     throw new Error("Value prop must be at least 10 chars");
-  if (i.intentPrompt.trim().length < 10)
-    throw new Error("Intent prompt must be at least 10 chars");
-  if (!i.csvText.trim()) throw new Error("CSV is empty");
 }
 
 export async function createCampaign(formData: FormData): Promise<void> {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  // Require an active Gmail connection
   const [account] = await db
     .select()
     .from(emailAccounts)
     .where(
       and(eq(emailAccounts.userId, userId), eq(emailAccounts.status, "active"))
     );
-  if (!account) {
-    redirect("/dashboard/settings?error=no_account");
-  }
+  if (!account) redirect("/dashboard/settings?error=no_account");
 
-  // Make sure the user row exists (defensive — should always be true after onboarding)
   await db
     .insert(users)
     .values({ id: userId, email: "(set-by-clerk-webhook)" })
@@ -54,19 +46,18 @@ export async function createCampaign(formData: FormData): Promise<void> {
     goalText: String(formData.get("goalText") ?? ""),
     senderPersona: String(formData.get("senderPersona") ?? ""),
     valueProp: String(formData.get("valueProp") ?? ""),
-    intentPrompt: String(formData.get("intentPrompt") ?? ""),
-    csvText: String(formData.get("csvText") ?? ""),
   };
   validate(input);
 
-  const parsed = parseCsv(input.csvText);
+  const csvText = String(formData.get("csvText") ?? "");
+  if (!csvText.trim()) throw new Error("CSV is empty");
+  const parsed = parseCsv(csvText);
   if (parsed.leads.length === 0) {
-    throw new Error(
-      `CSV had no usable rows (${parsed.rejected.length} rejected)`
-    );
+    throw new Error(`CSV had no usable rows (${parsed.rejected.length} rejected)`);
   }
 
-  // Insert campaign + sequence_step + leads in a single transaction
+  const steps = parseStepsFromFormData(formData);
+
   const campaignId = await db.transaction(async (tx) => {
     const [campaign] = await tx
       .insert(campaigns)
@@ -80,12 +71,14 @@ export async function createCampaign(formData: FormData): Promise<void> {
       })
       .returning({ id: campaigns.id });
 
-    await tx.insert(sequenceSteps).values({
-      campaignId: campaign.id,
-      stepIndex: 0,
-      intentPrompt: input.intentPrompt.trim(),
-      delayDays: 0,
-    });
+    await tx.insert(sequenceSteps).values(
+      steps.map((s) => ({
+        campaignId: campaign.id,
+        stepIndex: s.stepIndex,
+        intentPrompt: s.intentPrompt,
+        delayDays: s.delayDays,
+      }))
+    );
 
     await tx.insert(leads).values(
       parsed.leads.map((l) => ({
@@ -113,18 +106,13 @@ export async function generateSamples(campaignId: string): Promise<void> {
   const [campaign] = await db
     .select()
     .from(campaigns)
-    .where(
-      and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId))
-    );
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
   if (!campaign) throw new Error("campaign not found");
 
-  // Pick up to 3 random pending leads
   const pending = await db
     .select({ id: leads.id })
     .from(leads)
-    .where(
-      and(eq(leads.campaignId, campaignId), eq(leads.status, "pending"))
-    )
+    .where(and(eq(leads.campaignId, campaignId), eq(leads.status, "pending")))
     .limit(50);
 
   const sample = pending
@@ -148,29 +136,25 @@ export async function launchCampaign(campaignId: string): Promise<void> {
   const [campaign] = await db
     .select()
     .from(campaigns)
-    .where(
-      and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId))
-    );
+    .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
   if (!campaign) throw new Error("campaign not found");
 
-  // Fan out one event per pending lead
+  // Mark launched first so process-lead fans out email/send immediately
+  await db
+    .update(campaigns)
+    .set({ status: "launched", launchedAt: new Date() })
+    .where(eq(campaigns.id, campaignId));
+
   const pending = await db
     .select({ id: leads.id })
     .from(leads)
-    .where(
-      and(eq(leads.campaignId, campaignId), eq(leads.status, "pending"))
-    );
+    .where(and(eq(leads.campaignId, campaignId), eq(leads.status, "pending")));
 
   await Promise.all(
     pending.map((l) =>
       inngest.send({ name: "lead/process", data: { leadId: l.id } })
     )
   );
-
-  await db
-    .update(campaigns)
-    .set({ status: "launched", launchedAt: new Date() })
-    .where(eq(campaigns.id, campaignId));
 
   redirect(`/dashboard/campaigns/${campaignId}?launched=1`);
 }
