@@ -7,6 +7,10 @@ export interface SendArgs {
   to: string;
   subject: string;
   body: string;
+  /** Extra RFC 822 headers (e.g. List-Unsubscribe, In-Reply-To, References) */
+  headers?: Record<string, string>;
+  /** Existing Gmail thread to reply into */
+  threadId?: string;
 }
 
 export interface SendResult {
@@ -23,31 +27,38 @@ function base64url(buf: Buffer): string {
 }
 
 function buildRfc822(args: SendArgs): string {
-  // MIME-encode the subject so non-ASCII characters (emoji, accents) survive
   const subjectEncoded = `=?UTF-8?B?${Buffer.from(args.subject, "utf8").toString(
     "base64"
   )}?=`;
-  return [
+  const lines = [
     `From: ${args.from}`,
     `To: ${args.to}`,
     `Subject: ${subjectEncoded}`,
     "MIME-Version: 1.0",
     'Content-Type: text/plain; charset="UTF-8"',
     "Content-Transfer-Encoding: 8bit",
-    "",
-    args.body,
-  ].join("\r\n");
+  ];
+  if (args.headers) {
+    for (const [k, v] of Object.entries(args.headers)) {
+      lines.push(`${k}: ${v}`);
+    }
+  }
+  lines.push("", args.body);
+  return lines.join("\r\n");
 }
 
 export async function sendGmailMessage(args: SendArgs): Promise<SendResult> {
   const raw = base64url(Buffer.from(buildRfc822(args), "utf8"));
+  const body: Record<string, unknown> = { raw };
+  if (args.threadId) body.threadId = args.threadId;
+
   const res = await fetch(GMAIL_SEND_URL, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${args.accessToken}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ raw }),
+    body: JSON.stringify(body),
   });
   const text = await res.text();
   if (!res.ok) {

@@ -175,21 +175,24 @@ export const processLeadFn = inngest.createFunction(
     }
 
     // 8. Persist email
-    await step.run("persist-email", async () => {
-      await db.insert(emails).values({
-        leadId,
-        campaignId: ctx.campaign.id,
-        stepIndex: ctx.firstStep.stepIndex,
-        subject: finalDraft.subject,
-        body: finalDraft.body,
-        hookUsed:
-          selection.kind === "hook"
-            ? selection.hook
-            : selection.kind === "notes"
-              ? { kind: "notes", text: selection.text }
-              : { kind: "no_signal" },
-        status: needsReview ? "needs_review" : "queued",
-      });
+    const persisted = await step.run("persist-email", async () => {
+      const [row] = await db
+        .insert(emails)
+        .values({
+          leadId,
+          campaignId: ctx.campaign.id,
+          stepIndex: ctx.firstStep.stepIndex,
+          subject: finalDraft.subject,
+          body: finalDraft.body,
+          hookUsed:
+            selection.kind === "hook"
+              ? selection.hook
+              : selection.kind === "notes"
+                ? { kind: "notes", text: selection.text }
+                : { kind: "no_signal" },
+          status: needsReview ? "needs_review" : "queued",
+        })
+        .returning({ id: emails.id });
       await db
         .update(leads)
         .set({
@@ -200,7 +203,16 @@ export const processLeadFn = inngest.createFunction(
               : "ready",
         })
         .where(eq(leads.id, leadId));
+      return row;
     });
+
+    // 9. Fan out to send scheduler if the campaign is launched
+    if (!needsReview && ctx.campaign.status === "launched") {
+      await step.sendEvent("queue-send", {
+        name: "email/send",
+        data: { emailId: persisted.id },
+      });
+    }
 
     return {
       leadId,

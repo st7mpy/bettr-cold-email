@@ -12,6 +12,18 @@ export type Events = {
   "lead/process": {
     data: {
       leadId: string;
+      stepIndex?: number;
+    };
+  };
+  "email/send": {
+    data: {
+      emailId: string;
+    };
+  };
+  "lead/follow-up": {
+    data: {
+      leadId: string;
+      nextStepIndex: number;
     };
   };
 };
