@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { createCampaign } from "./actions";
+import { SequenceBuilder } from "./sequence-builder";
 
 export const dynamic = "force-dynamic";
 
@@ -110,25 +111,14 @@ export default async function NewCampaignPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>3 · First email — intent</CardTitle>
+            <CardTitle>3 · Sequence</CardTitle>
             <CardDescription>
-              Tell the agent what this email should do. Phase 4 adds follow-ups
-              and delays.
+              Add up to 4 steps. Step 1 fires immediately on launch. Follow-ups
+              send only if the lead hasn't replied or unsubscribed.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              <Label htmlFor="intentPrompt">Email intent</Label>
-              <textarea
-                id="intentPrompt"
-                name="intentPrompt"
-                rows={3}
-                required
-                minLength={10}
-                placeholder="Introduce myself, reference something specific they shipped or wrote, ask for a 15-min intro call."
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-            </div>
+            <SequenceBuilder />
           </CardContent>
         </Card>
 
@@ -138,8 +128,7 @@ export default async function NewCampaignPage() {
             <CardDescription>
               Paste CSV text below. Required column: <code>email</code>.
               Recommended: <code>name</code>, <code>company</code>,{" "}
-              <code>title</code>, <code>notes</code>. Anything else flows into
-              custom fields. Hard cap: 5,000 rows.
+              <code>title</code>, <code>notes</code>. Hard cap: 5,000 rows.
             </CardDescription>
           </CardHeader>
           <CardContent>
