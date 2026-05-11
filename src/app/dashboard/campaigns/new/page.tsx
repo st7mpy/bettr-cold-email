@@ -4,20 +4,66 @@ import { db } from "@/db";
 import { emailAccounts, users } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { createCampaign } from "./actions";
 import { SequenceBuilder } from "./sequence-builder";
+import { Icon } from "@/components/ui/design";
 
 export const dynamic = "force-dynamic";
+
+function Section({
+  num,
+  title,
+  sub,
+  children,
+}: {
+  num: number;
+  title: string;
+  sub?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 14,
+          marginBottom: 8,
+        }}
+      >
+        <span
+          className="mono tnum"
+          style={{
+            fontSize: 11,
+            color: "var(--accent)",
+            letterSpacing: ".12em",
+          }}
+        >
+          § 0{num}
+        </span>
+        <h2
+          className="display"
+          style={{ fontSize: 26, letterSpacing: "-0.02em" }}
+        >
+          {title}
+        </h2>
+      </div>
+      {sub && (
+        <p
+          style={{
+            fontSize: 13.5,
+            color: "var(--muted)",
+            marginBottom: 18,
+            maxWidth: 540,
+          }}
+        >
+          {sub}
+        </p>
+      )}
+      {children}
+    </section>
+  );
+}
 
 export default async function NewCampaignPage() {
   const { userId } = await auth();
@@ -34,133 +80,382 @@ export default async function NewCampaignPage() {
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold">New campaign</h1>
-        <p className="text-sm text-muted-foreground">
-          Describe who you are, what you want, and upload your list. The agent
-          writes a fresh email per lead — grounded in real research, never
-          mail-merged from a template.
-        </p>
-      </div>
+    <div>
+      {/* Page header */}
+      <header
+        className="page-head"
+        style={{
+          display: "flex",
+          alignItems: "flex-end",
+          justifyContent: "space-between",
+          gap: 24,
+        }}
+      >
+        <div>
+          <Link
+            href="/dashboard"
+            className="mono"
+            style={{
+              fontSize: 11,
+              color: "var(--muted)",
+              textTransform: "uppercase",
+              letterSpacing: ".1em",
+            }}
+          >
+            ← Campaigns
+          </Link>
+          <h1
+            className="display"
+            style={{
+              fontSize: 54,
+              lineHeight: 1,
+              letterSpacing: "-0.035em",
+              marginTop: 14,
+            }}
+          >
+            New campaign
+          </h1>
+          <p
+            style={{
+              marginTop: 14,
+              fontSize: 15,
+              color: "var(--muted)",
+              maxWidth: 560,
+            }}
+          >
+            You&apos;ll draft three sample emails before launching — non-skippable.
+            Trust before send.
+          </p>
+        </div>
+        <div
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--muted)",
+            textTransform: "uppercase",
+            letterSpacing: ".1em",
+          }}
+        >
+          Draft · auto-saved
+        </div>
+      </header>
 
-      <form action={createCampaign} className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>1 · Name & goal</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Campaign name</Label>
-              <Input
-                id="name"
-                name="name"
-                placeholder="Q2 partnership outreach"
-                required
-                minLength={2}
-              />
+      <div
+        className="page-body"
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 320px",
+          gap: 48,
+          alignItems: "start",
+        }}
+      >
+        <form
+          action={createCampaign}
+          style={{ display: "flex", flexDirection: "column", gap: 40 }}
+        >
+          {/* § 01 — Name */}
+          <Section
+            num={1}
+            title="Name the campaign"
+            sub="Pick something a teammate would recognize."
+          >
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+              <div>
+                <label className="label" htmlFor="name">
+                  Campaign name
+                </label>
+                <input
+                  className="input"
+                  id="name"
+                  name="name"
+                  placeholder="Q3 dev-tool partnerships"
+                  required
+                  minLength={2}
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="goalText">
+                  Goal · one line
+                </label>
+                <input
+                  className="input"
+                  id="goalText"
+                  name="goalText"
+                  placeholder="Land 5 partnership intros with platform-eng leads"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="goalText">
-                One-liner goal{" "}
-                <span className="text-muted-foreground">(optional)</span>
-              </Label>
-              <Input
-                id="goalText"
-                name="goalText"
-                placeholder="Land 5 dev-tool partnership intros"
-              />
-            </div>
-          </CardContent>
-        </Card>
+          </Section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>2 · Sender persona & value prop</CardTitle>
-            <CardDescription>
-              Plain-language. The agent uses this verbatim — no merge tags.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="senderPersona">About you</Label>
-              <textarea
-                id="senderPersona"
-                name="senderPersona"
-                rows={3}
-                required
-                minLength={10}
-                placeholder="I'm a founder of a dev-tool startup that helps engineering teams ship faster."
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
+          {/* § 02 — Persona */}
+          <Section
+            num={2}
+            title="Sender persona & value prop"
+            sub="Plain language. The agent uses this verbatim — never as a merge tag."
+          >
+            <div style={{ display: "grid", gap: 18 }}>
+              <div>
+                <label className="label" htmlFor="senderPersona">
+                  About you
+                </label>
+                <textarea
+                  className="textarea"
+                  id="senderPersona"
+                  name="senderPersona"
+                  rows={3}
+                  required
+                  minLength={10}
+                  placeholder="I'm a founder at Margin — a review-time instrumentation tool for engineering teams. Background at Stripe and Linear."
+                />
+              </div>
+              <div>
+                <label className="label" htmlFor="valueProp">
+                  What you&apos;re offering
+                </label>
+                <textarea
+                  className="textarea"
+                  id="valueProp"
+                  name="valueProp"
+                  rows={3}
+                  required
+                  minLength={10}
+                  placeholder="A no-integration 2-week pilot that surfaces where reviewer time is landing per repo, per author."
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="valueProp">Value prop / what you're offering</Label>
-              <textarea
-                id="valueProp"
-                name="valueProp"
-                rows={3}
-                required
-                minLength={10}
-                placeholder="A 2-week pilot of our review-time-tracking integration with Linear."
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              />
-            </div>
-          </CardContent>
-        </Card>
+          </Section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>3 · Sequence</CardTitle>
-            <CardDescription>
-              Add up to 4 steps. Step 1 fires immediately on launch. Follow-ups
-              send only if the lead hasn't replied or unsubscribed.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
+          {/* § 03 — Sequence */}
+          <Section
+            num={3}
+            title="Sequence"
+            sub="1–5 steps. Each step is freeform intent — not a template."
+          >
             <SequenceBuilder />
-          </CardContent>
-        </Card>
+          </Section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>4 · Upload leads (CSV)</CardTitle>
-            <CardDescription>
-              Paste CSV text below. Required column: <code>email</code>.
-              Recommended: <code>name</code>, <code>company</code>,{" "}
-              <code>title</code>, <code>notes</code>. Hard cap: 5,000 rows.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <textarea
-              id="csvText"
-              name="csvText"
-              rows={10}
-              required
-              placeholder={`email,name,company,title,notes
-jane@acme.com,Jane Doe,Acme,VP Eng,met at ConfX
-john@beta.com,John Roe,Beta,CTO,`}
-              className="font-mono text-sm flex min-h-[200px] w-full rounded-md border border-input bg-background px-3 py-2 shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <p className="mt-2 text-xs text-muted-foreground">
-              Sending from{" "}
-              <span className="font-medium">
-                {user?.postalAddress ? "your connected Gmail" : "(connect first)"}
+          {/* § 04 — Leads */}
+          <Section
+            num={4}
+            title="Upload leads"
+            sub="Paste CSV. Required: email. Recommended: name, company, title, notes."
+          >
+            <div style={{ position: "relative" }}>
+              <textarea
+                className="textarea textarea-mono"
+                id="csvText"
+                name="csvText"
+                rows={9}
+                required
+                placeholder={`email,name,company,title,notes\npriya@graphroot.dev,Priya Mehta,Graphroot,CTO,\nmarcus@vellum-labs.com,Marcus Vance,Vellum Labs,VP Eng,`}
+              />
+              <div
+                style={{
+                  position: "absolute",
+                  top: 10,
+                  right: 14,
+                  display: "flex",
+                  gap: 8,
+                  alignItems: "center",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  style={{ gap: 6 }}
+                >
+                  <Icon name="upload" size={13} />
+                  Upload .csv
+                </button>
+              </div>
+            </div>
+            <div
+              className="mono"
+              style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}
+            >
+              Hard cap 5,000 rows. Sending from{" "}
+              <span style={{ color: "var(--ink-2)" }}>
+                {user?.postalAddress ? "your connected Gmail" : "(connect Gmail first)"}
               </span>
               .
-            </p>
-          </CardContent>
-        </Card>
+            </div>
+          </Section>
 
-        <div className="flex justify-end gap-3">
-          <Link href="/dashboard">
-            <Button type="button" variant="ghost">
-              Cancel
-            </Button>
-          </Link>
-          <Button type="submit">Create draft</Button>
-        </div>
-      </form>
+          {/* Footer actions */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingTop: 24,
+              borderTop: "1px solid var(--hairline)",
+            }}
+          >
+            <Link href="/dashboard">
+              <button type="button" className="btn btn-ghost">
+                Cancel
+              </button>
+            </Link>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="submit" name="_action" value="draft" className="btn btn-outline">
+                Save draft
+              </button>
+              <button
+                type="submit"
+                name="_action"
+                value="sample"
+                className="btn btn-primary"
+                style={{ gap: 8 }}
+              >
+                Create &amp; sample
+                <Icon name="arrow-right" size={15} />
+              </button>
+            </div>
+          </div>
+        </form>
+
+        {/* Right sidebar — explainer */}
+        <aside
+          style={{
+            position: "sticky",
+            top: 32,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
+          {/* Pipeline steps */}
+          <div className="card" style={{ padding: 20 }}>
+            <div
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                letterSpacing: ".12em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+              }}
+            >
+              The pipeline · per lead
+            </div>
+            <div
+              style={{
+                marginTop: 14,
+                display: "flex",
+                flexDirection: "column",
+                gap: 0,
+              }}
+            >
+              {[
+                { label: "Pull lead data", detail: "name, title, company, notes" },
+                { label: "Web research", detail: "Tavily · 3–5 sources" },
+                { label: "Extract hooks", detail: "3 candidate claims" },
+                { label: "Ground check", detail: "Haiku verifies each claim" },
+                { label: "Draft email", detail: "Opus · best hook" },
+                { label: "Critique & revise", detail: "Haiku → Opus revision" },
+                { label: "Send or queue", detail: "paced · quota-gated" },
+              ].map((s, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "22px 1fr",
+                    gap: 10,
+                    padding: "7px 0",
+                    borderBottom: i < 6 ? "1px dashed var(--hairline)" : "none",
+                  }}
+                >
+                  <div
+                    className="mono tnum"
+                    style={{ fontSize: 10.5, color: "var(--muted)" }}
+                  >
+                    0{i + 1}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13 }}>{s.label}</div>
+                    <div
+                      className="mono"
+                      style={{ fontSize: 10.5, color: "var(--muted)" }}
+                    >
+                      {s.detail}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Cost estimate */}
+          <div
+            className="card"
+            style={{
+              padding: 20,
+              background: "var(--accent-soft)",
+              borderColor: "var(--accent-line)",
+            }}
+          >
+            <div
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                letterSpacing: ".12em",
+                textTransform: "uppercase",
+                color: "var(--accent)",
+              }}
+            >
+              Estimated
+            </div>
+            <div
+              style={{
+                marginTop: 10,
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: 14,
+              }}
+            >
+              <div>
+                <div
+                  className="display tnum"
+                  style={{ fontSize: 30 }}
+                >
+                  ~$0.06
+                </div>
+                <div
+                  className="mono"
+                  style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4 }}
+                >
+                  per lead
+                </div>
+              </div>
+              <div>
+                <div
+                  className="display tnum"
+                  style={{ fontSize: 30 }}
+                >
+                  ~90s
+                </div>
+                <div
+                  className="mono"
+                  style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4 }}
+                >
+                  per lead
+                </div>
+              </div>
+            </div>
+            <div
+              className="mono"
+              style={{
+                fontSize: 11,
+                color: "var(--ink-2)",
+                marginTop: 14,
+                lineHeight: 1.5,
+              }}
+            >
+              You&apos;ll see 3 generated samples before any email is sent. Walk away
+              if they don&apos;t pass your smell test.
+            </div>
+          </div>
+        </aside>
+      </div>
     </div>
   );
 }

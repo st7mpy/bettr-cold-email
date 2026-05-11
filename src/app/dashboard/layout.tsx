@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUserRow } from "@/lib/auth";
 import { Sidebar } from "@/components/layout/sidebar";
-import { Topbar } from "@/components/layout/topbar";
 
 export default async function DashboardLayout({
   children,
@@ -13,12 +12,11 @@ export default async function DashboardLayout({
   if (!user.postalAddress) redirect("/onboarding");
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="app-shell">
       <Sidebar />
-      <div className="flex flex-1 flex-col">
-        <Topbar />
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
-      </div>
+      <main className="main-pane" style={{ overflowY: "auto", height: "100vh" }}>
+        {children}
+      </main>
     </div>
   );
 }

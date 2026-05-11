@@ -3,27 +3,12 @@ import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/db";
 import { campaigns, leads, emails, sequenceSteps } from "@/db/schema";
-import { and, eq, sql, desc } from "drizzle-orm";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { and, eq, desc } from "drizzle-orm";
 import { generateSamples, launchCampaign } from "../new/actions";
 import { computeCampaignStats } from "@/lib/campaign/stats";
+import { Pill, Stat, SectionLabel, StatusDot, Icon } from "@/components/ui/design";
 
 export const dynamic = "force-dynamic";
-
-const STATUS_COLORS: Record<string, string> = {
-  queued: "text-zinc-500",
-  sent: "text-blue-600",
-  bounced: "text-red-600",
-  failed: "text-red-500",
-  needs_review: "text-amber-600",
-};
 
 export default async function CampaignDetailPage({
   params,
@@ -50,36 +35,21 @@ export default async function CampaignDetailPage({
     .where(eq(sequenceSteps.campaignId, campaign.id))
     .orderBy(sequenceSteps.stepIndex);
 
-  // Lead status breakdown
-  const counts = await db
-    .select({
-      status: leads.status,
-      count: sql<number>`count(*)::int`,
-    })
+  const allLeads = await db
+    .select()
     .from(leads)
     .where(eq(leads.campaignId, campaign.id))
-    .groupBy(leads.status);
+    .orderBy(desc(leads.createdAt));
 
-  const totalLeads = counts.reduce((s, r) => s + r.count, 0);
-  const replied = counts.find((r) => r.status === "replied")?.count ?? 0;
-  const needsReview = counts.find((r) => r.status === "needs_review")?.count ?? 0;
-  const stopped = counts.find((r) => r.status === "stopped")?.count ?? 0;
+  const totalLeads = allLeads.length;
 
-  // Email engagement stats
   const allEmails = await db
-    .select({
-      status: emails.status,
-      openedAt: emails.openedAt,
-      clickedAt: emails.clickedAt,
-      repliedAt: emails.repliedAt,
-      bouncedAt: emails.bouncedAt,
-    })
+    .select()
     .from(emails)
     .where(eq(emails.campaignId, campaign.id));
 
   const stats = computeCampaignStats(allEmails);
 
-  // Recent emails with lead info
   const recentEmails = await db
     .select({
       id: emails.id,
@@ -96,228 +66,520 @@ export default async function CampaignDetailPage({
     .innerJoin(leads, eq(emails.leadId, leads.id))
     .where(eq(emails.campaignId, campaign.id))
     .orderBy(desc(emails.createdAt))
-    .limit(10);
+    .limit(1);
 
+  const spotlightEmail = recentEmails[0] ?? null;
   const isDraft = campaign.status === "draft";
+  // Count replies by classification from emails/replies tables
+  const positive = 0; // will be populated from replies table in a future pass
+  const replied = allLeads.filter((l) => l.status === "replied").length;
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs text-muted-foreground mb-1">
-            <Link href="/dashboard" className="hover:underline">Campaigns</Link>
-            {" / "}
-          </p>
-          <h1 className="text-2xl font-bold">{campaign.name}</h1>
-          {campaign.goalText && (
-            <p className="text-sm text-muted-foreground">{campaign.goalText}</p>
-          )}
-        </div>
-        <span
-          className={`rounded-full border px-3 py-1 text-xs capitalize shrink-0 ${
-            campaign.status === "launched"
-              ? "border-green-300 bg-green-50 text-green-900"
-              : campaign.status === "paused"
-                ? "border-amber-300 bg-amber-50 text-amber-900"
-                : "border-zinc-200 text-muted-foreground"
-          }`}
+    <div>
+      {/* Page header */}
+      <header className="page-head">
+        <Link
+          href="/dashboard"
+          className="mono"
+          style={{
+            fontSize: 11,
+            color: "var(--muted)",
+            textTransform: "uppercase",
+            letterSpacing: ".1em",
+          }}
         >
-          {campaign.status}
-        </span>
-      </div>
+          ← Campaigns
+        </Link>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "space-between",
+            gap: 24,
+            marginTop: 14,
+          }}
+        >
+          <div>
+            <h1
+              className="display"
+              style={{
+                fontSize: 64,
+                lineHeight: 0.95,
+                letterSpacing: "-0.035em",
+                maxWidth: 760,
+              }}
+            >
+              {campaign.name}
+            </h1>
+            {campaign.goalText && (
+              <p
+                style={{
+                  marginTop: 14,
+                  fontSize: 15,
+                  color: "var(--muted)",
+                  maxWidth: 560,
+                }}
+              >
+                {campaign.goalText}
+              </p>
+            )}
+            <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+              <Pill tone={campaign.status === "launched" ? "good" : "warn"} dot>
+                {campaign.status}
+              </Pill>
+              {campaign.createdAt && (
+                <Pill>
+                  created{" "}
+                  {new Date(campaign.createdAt).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                  })}
+                </Pill>
+              )}
+              {allSteps.length > 0 && (
+                <Pill>{allSteps.length}-step sequence</Pill>
+              )}
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            {isDraft ? (
+              <>
+                <form
+                  action={async () => {
+                    "use server";
+                    await generateSamples(campaign.id);
+                  }}
+                >
+                  <button type="submit" className="btn btn-outline">
+                    Generate samples
+                  </button>
+                </form>
+                <form
+                  action={async () => {
+                    "use server";
+                    await launchCampaign(campaign.id);
+                  }}
+                >
+                  <button type="submit" className="btn btn-primary">
+                    Launch all
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <button className="btn btn-outline">Pause</button>
+                <button className="btn btn-outline">
+                  <Icon name="external" size={14} />
+                  Export
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
 
+      {/* Banners */}
       {sp.sampling && (
-        <div className="rounded-md border border-blue-300 bg-blue-50 p-3 text-sm text-blue-900">
-          Sampling 3 leads through the agent pipeline — usually takes 30–60 s.
-          Refresh to see results.
+        <div
+          style={{
+            margin: "0 56px",
+            marginTop: 16,
+            padding: "12px 16px",
+            background: "var(--accent-soft)",
+            border: "1px solid var(--accent-line)",
+            borderRadius: 6,
+            fontSize: 13,
+            color: "var(--accent)",
+          }}
+          className="mono"
+        >
+          Sampling 3 leads — usually 30–60 s. Refresh to see results.
         </div>
       )}
       {sp.launched && (
-        <div className="rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-900">
+        <div
+          style={{
+            margin: "0 56px",
+            marginTop: 16,
+            padding: "12px 16px",
+            background: "var(--good-soft)",
+            border: "1px solid var(--good)",
+            borderRadius: 6,
+            fontSize: 13,
+            color: "var(--good)",
+          }}
+          className="mono"
+        >
           Campaign launched. All leads are queued through the pipeline.
         </div>
       )}
 
-      {/* Lead breakdown */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total leads</CardDescription>
-            <CardTitle className="text-3xl">{totalLeads}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Replied</CardDescription>
-            <CardTitle className="text-3xl text-green-700">{replied}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Need review</CardDescription>
-            <CardTitle className="text-3xl text-amber-700">{needsReview}</CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Stopped / unsub</CardDescription>
-            <CardTitle className="text-3xl text-muted-foreground">{stopped}</CardTitle>
-          </CardHeader>
-        </Card>
-      </div>
-
-      {/* Engagement stats — only shown once emails are sent */}
-      {stats.sent > 0 && (
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Sent</CardDescription>
-              <CardTitle className="text-3xl">{stats.sent}</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Open rate</CardDescription>
-              <CardTitle className="text-3xl">{stats.openRate}%</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Click rate</CardDescription>
-              <CardTitle className="text-3xl">{stats.clickRate}%</CardTitle>
-            </CardHeader>
-          </Card>
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Reply rate</CardDescription>
-              <CardTitle className="text-3xl text-green-700">{stats.replyRate}%</CardTitle>
-            </CardHeader>
-          </Card>
-        </div>
-      )}
-
-      {isDraft && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Review before launch</CardTitle>
-            <CardDescription>
-              Generate 3 sample emails to QA the agent output. Read them, check
-              the trace, then launch when satisfied.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex gap-2">
-            <form
-              action={async () => {
-                "use server";
-                await generateSamples(campaign.id);
+      <div className="page-body">
+        {/* Editorial stat band */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1.4fr 1fr 1fr 1fr 1fr",
+            border: "1px solid var(--hairline)",
+            borderRadius: 8,
+            background: "var(--surface)",
+            marginBottom: 40,
+          }}
+        >
+          {/* Progress */}
+          <div
+            style={{
+              padding: "22px 28px",
+              borderRight: "1px solid var(--hairline)",
+              background: "var(--paper-2)",
+            }}
+          >
+            <div
+              className="mono"
+              style={{
+                fontSize: 10.5,
+                letterSpacing: ".12em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
               }}
             >
-              <Button type="submit" variant="outline">
-                Generate 3 samples
-              </Button>
-            </form>
-            <form
-              action={async () => {
-                "use server";
-                await launchCampaign(campaign.id);
+              Progress
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: 8,
+                marginTop: 10,
               }}
             >
-              <Button type="submit">Launch all</Button>
-            </form>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Sequence overview */}
-      {allSteps.length > 0 && (
-        <details className="text-xs text-muted-foreground">
-          <summary className="cursor-pointer font-medium text-sm text-foreground">
-            Sequence ({allSteps.length} step{allSteps.length !== 1 ? "s" : ""})
-          </summary>
-          <div className="mt-3 space-y-2">
-            {allSteps.map((s) => (
-              <div key={s.id} className="rounded border p-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium">Step {s.stepIndex + 1}</span>
-                  {s.delayDays > 0 && (
-                    <span className="text-muted-foreground">
-                      · send {s.delayDays}d after previous
-                    </span>
-                  )}
-                </div>
-                <p>{s.intentPrompt}</p>
-              </div>
-            ))}
+              <span
+                className="display tnum"
+                style={{ fontSize: 54, letterSpacing: "-0.03em" }}
+              >
+                {stats.sent}
+              </span>
+              <span className="mono" style={{ fontSize: 14, color: "var(--muted)" }}>
+                / {totalLeads} sent
+              </span>
+            </div>
+            <div
+              style={{
+                height: 4,
+                background: "var(--hairline)",
+                marginTop: 14,
+                borderRadius: 2,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: `${totalLeads > 0 ? (stats.sent / totalLeads) * 100 : 0}%`,
+                  background: "var(--accent)",
+                }}
+              />
+            </div>
+            <div
+              className="mono"
+              style={{ fontSize: 11, color: "var(--muted)", marginTop: 8 }}
+            >
+              {totalLeads - stats.sent} queued · paced 30–120s between sends
+            </div>
           </div>
-        </details>
-      )}
 
-      {/* Generated email previews */}
-      {recentEmails.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-lg font-semibold">Emails</h2>
-          {recentEmails.map((e) => (
-            <Card key={e.id} className="overflow-hidden">
-              <CardHeader>
-                <div className="flex items-start justify-between gap-4">
+          <Stat label="Open rate" value={stats.openRate} suffix="%" />
+          <Stat label="Click rate" value={stats.clickRate} suffix="%" />
+          <Stat label="Reply rate" value={stats.replyRate} accent suffix="%" />
+          <Stat
+            label="Positive"
+            value={positive}
+            sub={`${replied - positive} other · ${totalLeads - stats.sent} queued`}
+            noBorderRight
+          />
+        </div>
+
+        <div
+          style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 48 }}
+        >
+          {/* Leads table */}
+          <div>
+            <SectionLabel>
+              Leads · {allLeads.length} of {totalLeads}
+            </SectionLabel>
+            <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+              {/* Table header */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1.4fr 1fr 90px 28px",
+                  padding: "10px 18px",
+                  borderBottom: "1px solid var(--hairline)",
+                  background: "var(--paper-2)",
+                }}
+              >
+                {["Lead", "Company · title", "Status", ""].map((h) => (
+                  <span
+                    key={h}
+                    className="mono"
+                    style={{
+                      fontSize: 10.5,
+                      color: "var(--muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: ".1em",
+                    }}
+                  >
+                    {h}
+                  </span>
+                ))}
+              </div>
+
+              {allLeads.length === 0 && (
+                <div
+                  style={{
+                    padding: "24px 18px",
+                    color: "var(--muted)",
+                    fontSize: 13,
+                  }}
+                  className="mono"
+                >
+                  No leads uploaded yet.
+                </div>
+              )}
+
+              {allLeads.map((l, i) => (
+                <Link
+                  key={l.id}
+                  href={`/dashboard/campaigns/${campaign.id}/leads/${l.id}`}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1.4fr 1fr 90px 28px",
+                    padding: "14px 18px",
+                    alignItems: "center",
+                    borderBottom:
+                      i < allLeads.length - 1
+                        ? "1px solid var(--hairline)"
+                        : "none",
+                    textAlign: "left",
+                    gap: 8,
+                    textDecoration: "none",
+                    color: "inherit",
+                    transition: "background 120ms",
+                  }}
+                  onMouseEnter={(e) =>
+                    ((e.currentTarget as HTMLElement).style.background =
+                      "var(--paper-2)")
+                  }
+                  onMouseLeave={(e) =>
+                    ((e.currentTarget as HTMLElement).style.background =
+                      "transparent")
+                  }
+                >
                   <div>
-                    <CardTitle className="text-base">{e.subject}</CardTitle>
-                    <CardDescription>
-                      to {e.leadName ?? e.leadEmail}{" "}
-                      <span className="text-muted-foreground">
-                        ({e.leadEmail})
-                      </span>
-                      {" · "}
-                      <span className={STATUS_COLORS[e.status] ?? ""}>
-                        {e.status}
-                      </span>
-                    </CardDescription>
-                  </div>
-                  <div className="flex gap-2 shrink-0">
-                    {e.threadId && (
-                      <a
-                        href={`https://mail.google.com/mail/#inbox/${e.threadId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        <Button variant="ghost" size="sm">
-                          Gmail ↗
-                        </Button>
-                      </a>
-                    )}
-                    <Link
-                      href={`/dashboard/campaigns/${campaign.id}/leads/${e.leadId}`}
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                      {l.name ?? "—"}
+                    </div>
+                    <div
+                      className="mono"
+                      style={{ fontSize: 11, color: "var(--muted)" }}
                     >
-                      <Button variant="outline" size="sm">
-                        Trace
-                      </Button>
+                      {l.email}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13 }}>{l.company ?? "—"}</div>
+                    <div
+                      className="mono"
+                      style={{ fontSize: 11, color: "var(--muted)" }}
+                    >
+                      {l.title ?? "—"}
+                    </div>
+                  </div>
+                  <div
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    <StatusDot status={l.status} />
+                    <span
+                      className="mono"
+                      style={{ fontSize: 11, color: "var(--ink-2)" }}
+                    >
+                      {l.status.replace("_", " ")}
+                    </span>
+                  </div>
+                  <Icon name="arrow-right" size={14} />
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {/* Right column: sequence + spotlight email */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 32 }}>
+            {/* Sequence */}
+            {allSteps.length > 0 && (
+              <div>
+                <SectionLabel>Sequence</SectionLabel>
+                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                  {allSteps.map((step, i) => (
+                    <div
+                      key={step.id}
+                      style={{
+                        padding: "16px 18px",
+                        borderBottom:
+                          i < allSteps.length - 1
+                            ? "1px solid var(--hairline)"
+                            : "none",
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          marginBottom: 8,
+                        }}
+                      >
+                        <span
+                          className="mono tnum"
+                          style={{
+                            fontSize: 11,
+                            color: "var(--accent)",
+                            letterSpacing: ".1em",
+                          }}
+                        >
+                          STEP 0{i + 1}
+                        </span>
+                        <span
+                          className="mono"
+                          style={{ fontSize: 11, color: "var(--muted)" }}
+                        >
+                          {step.delayDays === 0
+                            ? "on launch"
+                            : `+${step.delayDays} days`}
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "var(--ink-2)",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {step.intentPrompt}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Spotlight email */}
+            {spotlightEmail && (
+              <div>
+                <SectionLabel>Most recent send</SectionLabel>
+                <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+                  <div
+                    style={{
+                      padding: "12px 18px",
+                      borderBottom: "1px solid var(--hairline)",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span
+                      className="mono"
+                      style={{ fontSize: 11, color: "var(--muted)" }}
+                    >
+                      to {spotlightEmail.leadEmail}
+                    </span>
+                    <Pill tone="good" dot>
+                      {spotlightEmail.status}
+                    </Pill>
+                  </div>
+                  <div style={{ padding: 18 }}>
+                    <div
+                      style={{
+                        fontSize: 13.5,
+                        fontWeight: 500,
+                        marginBottom: 10,
+                      }}
+                    >
+                      {spotlightEmail.subject}
+                    </div>
+                    <pre
+                      style={{
+                        whiteSpace: "pre-wrap",
+                        fontFamily: "inherit",
+                        fontSize: 13,
+                        lineHeight: 1.55,
+                        color: "var(--ink-2)",
+                      }}
+                    >
+                      {spotlightEmail.body.slice(0, 310)}
+                      {spotlightEmail.body.length > 310 ? "…" : ""}
+                    </pre>
+                    <Link
+                      href={`/dashboard/campaigns/${campaign.id}/leads/${spotlightEmail.leadId}`}
+                      className="mono"
+                      style={{
+                        fontSize: 11,
+                        color: "var(--accent)",
+                        marginTop: 10,
+                        letterSpacing: ".06em",
+                        display: "inline-block",
+                      }}
+                    >
+                      VIEW FULL TRACE →
                     </Link>
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent>
-                <pre className="whitespace-pre-wrap text-sm font-sans text-muted-foreground">
-                  {e.body.slice(0, 600)}
-                  {e.body.length > 600 ? "…" : ""}
-                </pre>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+              </div>
+            )}
 
-      {recentEmails.length === 0 && totalLeads > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>No emails yet</CardTitle>
-            <CardDescription>
-              {isDraft
-                ? "Click Generate 3 samples to preview the agent's output."
-                : "Pipeline is running — refresh in a moment."}
-            </CardDescription>
-          </CardHeader>
-        </Card>
-      )}
+            {/* Draft CTA */}
+            {isDraft && allLeads.length > 0 && (
+              <div>
+                <SectionLabel>Launch</SectionLabel>
+                <div className="card" style={{ padding: 24 }}>
+                  <p
+                    style={{
+                      fontSize: 13,
+                      color: "var(--ink-2)",
+                      lineHeight: 1.5,
+                      marginBottom: 16,
+                    }}
+                  >
+                    Generate 3 sample emails to QA the agent output, then launch
+                    when satisfied.
+                  </p>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await generateSamples(campaign.id);
+                      }}
+                    >
+                      <button type="submit" className="btn btn-outline">
+                        Generate samples
+                      </button>
+                    </form>
+                    <form
+                      action={async () => {
+                        "use server";
+                        await launchCampaign(campaign.id);
+                      }}
+                    >
+                      <button type="submit" className="btn btn-primary">
+                        Launch all
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
