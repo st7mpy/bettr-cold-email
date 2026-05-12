@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { suppressionList } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { Pill, SectionLabel, Stat } from "@/components/ui/design";
+import { removeFromSuppression } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -164,16 +165,21 @@ export default async function SuppressionPage() {
                       year: "numeric",
                     })}
                   </span>
-                  <button
-                    className="mono"
-                    style={{
-                      fontSize: 11,
-                      color: "var(--muted)",
-                      textDecoration: "underline",
-                    }}
-                  >
-                    remove
-                  </button>
+                  <form action={removeFromSuppression}>
+                    <input type="hidden" name="email" value={r.email} />
+                    <button
+                      type="submit"
+                      className="mono"
+                      style={{
+                        fontSize: 11,
+                        color: "var(--bad)",
+                        textDecoration: "underline",
+                        cursor: "pointer",
+                      }}
+                    >
+                      remove
+                    </button>
+                  </form>
                 </div>
               );
             })}

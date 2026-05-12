@@ -1,7 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { emailAccounts, suppressionList } from "@/db/schema";
-import { and, eq, ne, desc } from "drizzle-orm";
+import { emailAccounts, suppressionList, campaigns, emails } from "@/db/schema";
+import { and, eq, ne, desc, gte, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { Pill, SectionLabel, Icon } from "@/components/ui/design";
 import {
@@ -36,6 +36,42 @@ export default async function SettingsPage({
     .where(eq(suppressionList.userId, userId))
     .orderBy(desc(suppressionList.createdAt))
     .limit(6);
+
+  // Usage stats: emails sent this calendar month
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const userCampaigns = await db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(eq(campaigns.userId, userId));
+
+  let emailsThisMonth = 0;
+  let leadsResearched = 0;
+  if (userCampaigns.length > 0) {
+    const campaignIds = userCampaigns.map((c) => c.id);
+    const sentEmails = await db
+      .select({ id: emails.id })
+      .from(emails)
+      .where(
+        and(
+          inArray(emails.campaignId, campaignIds),
+          eq(emails.status, "sent"),
+          gte(emails.sentAt, monthStart)
+        )
+      );
+    emailsThisMonth = sentEmails.length;
+
+    const allLeadsWithEmails = await db
+      .selectDistinct({ leadId: emails.leadId })
+      .from(emails)
+      .where(inArray(emails.campaignId, campaignIds));
+    leadsResearched = allLeadsWithEmails.length;
+  }
+
+  // Estimate API cost: ~$0.065 per email
+  const apiCost = (emailsThisMonth * 0.065).toFixed(2);
+  const usageProgressPct = Math.min((emailsThisMonth / 1000) * 100, 100);
 
   return (
     <div>
@@ -416,7 +452,7 @@ export default async function SettingsPage({
                     }}
                   >
                     <span className="display tnum" style={{ fontSize: 32 }}>
-                      0
+                      {emailsThisMonth.toLocaleString()}
                     </span>
                     <span
                       className="mono"
@@ -433,7 +469,7 @@ export default async function SettingsPage({
                       overflow: "hidden",
                     }}
                   >
-                    <div style={{ height: "100%", width: "0%", background: "var(--ink)" }} />
+                    <div style={{ height: "100%", width: `${usageProgressPct}%`, background: "var(--ink)" }} />
                   </div>
                 </div>
 
@@ -452,7 +488,7 @@ export default async function SettingsPage({
                       API spend
                     </div>
                     <div className="display tnum" style={{ fontSize: 28 }}>
-                      $0.00
+                      ${apiCost}
                     </div>
                     <div
                       className="mono"
@@ -479,7 +515,7 @@ export default async function SettingsPage({
                       Leads researched
                     </div>
                     <div className="display tnum" style={{ fontSize: 28 }}>
-                      0
+                      {leadsResearched}
                     </div>
                   </div>
                 </div>

@@ -2,8 +2,8 @@ import { auth } from "@clerk/nextjs/server";
 import { redirect, notFound } from "next/navigation";
 import Link from "next/link";
 import { db } from "@/db";
-import { campaigns, leads, emails, sequenceSteps } from "@/db/schema";
-import { and, eq, desc } from "drizzle-orm";
+import { campaigns, leads, emails, sequenceSteps, replies } from "@/db/schema";
+import { and, eq, desc, inArray } from "drizzle-orm";
 import { generateSamples, launchCampaign } from "../new/actions";
 import { computeCampaignStats } from "@/lib/campaign/stats";
 import { Pill, Stat, SectionLabel, StatusDot, Icon } from "@/components/ui/design";
@@ -50,6 +50,17 @@ export default async function CampaignDetailPage({
 
   const stats = computeCampaignStats(allEmails);
 
+  // Count positive replies for this campaign
+  const emailIds = allEmails.map((e) => e.id);
+  let positive = 0;
+  if (emailIds.length > 0) {
+    const positiveReplies = await db
+      .select({ id: replies.id })
+      .from(replies)
+      .where(and(inArray(replies.emailId, emailIds), eq(replies.classification, "positive")));
+    positive = positiveReplies.length;
+  }
+
   const recentEmails = await db
     .select({
       id: emails.id,
@@ -70,8 +81,6 @@ export default async function CampaignDetailPage({
 
   const spotlightEmail = recentEmails[0] ?? null;
   const isDraft = campaign.status === "draft";
-  // Count replies by classification from emails/replies tables
-  const positive = 0; // will be populated from replies table in a future pass
   const replied = allLeads.filter((l) => l.status === "replied").length;
 
   return (

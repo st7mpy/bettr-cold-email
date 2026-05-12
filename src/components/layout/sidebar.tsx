@@ -4,15 +4,21 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon } from "@/components/ui/design";
 
-const navItems = [
-  { href: "/dashboard",            label: "Campaigns",   icon: "campaigns" as const, badge: null, exact: true },
-  { href: "/dashboard/inbox",      label: "Reply inbox", icon: "inbox"     as const, badge: 4,    exact: false },
-  { href: "/dashboard/suppression",label: "Suppression", icon: "shield"    as const, badge: null, exact: false },
-  { href: "/dashboard/settings",   label: "Settings",    icon: "settings"  as const, badge: null, exact: false },
-];
+interface SidebarProps {
+  sentToday?: number;
+  dailyQuota?: number;
+  inboxCount?: number;
+}
 
-export function Sidebar() {
+export function Sidebar({ sentToday = 0, dailyQuota = 50, inboxCount = 0 }: SidebarProps) {
   const pathname = usePathname();
+
+  const navItems = [
+    { href: "/dashboard",             label: "Campaigns",   icon: "campaigns" as const, badge: null,                         exact: true },
+    { href: "/dashboard/inbox",       label: "Reply inbox", icon: "inbox"     as const, badge: inboxCount > 0 ? inboxCount : null, exact: false },
+    { href: "/dashboard/suppression", label: "Suppression", icon: "shield"    as const, badge: null,                         exact: false },
+    { href: "/dashboard/settings",    label: "Settings",    icon: "settings"  as const, badge: null,                         exact: false },
+  ];
 
   function isActive(href: string, exact: boolean) {
     if (exact) return pathname === href || pathname.startsWith("/dashboard/campaigns");
@@ -166,10 +172,10 @@ export function Sidebar() {
           }}
         >
           <span className="tnum" style={{ fontSize: 18, fontWeight: 500 }}>
-            142
+            {sentToday}
           </span>
           <span className="mono" style={{ fontSize: 11, color: "var(--muted)" }}>
-            / 350
+            / {dailyQuota}
           </span>
         </div>
         <div
@@ -184,7 +190,7 @@ export function Sidebar() {
           <div
             style={{
               height: "100%",
-              width: "40%",
+              width: `${dailyQuota > 0 ? Math.min((sentToday / dailyQuota) * 100, 100) : 0}%`,
               background: "var(--ink)",
             }}
           />
