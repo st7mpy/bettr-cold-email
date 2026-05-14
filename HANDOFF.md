@@ -9,6 +9,8 @@
 - **Tavily** — web research
 - **Vercel** — deployment at `bettr-cold-email.vercel.app`
 
+---
+
 ## Completed phases
 
 ### Phase 1–2 · Foundation
@@ -28,67 +30,60 @@ Per-lead: tiered Tavily search → extract hooks → verify groundedness (Haiku)
 `computeCampaignStats`, `parseStepsFromFormData`, `SequenceBuilder` client component, active nav state, campaign detail engagement stats row.
 
 ### Design handoff (Dossier aesthetic)
-Full redesign across all 9 screens matching `design_handoff_bettr_cold_email/`. Key files:
+Full redesign across all 9 screens. Key files:
 - `src/app/globals.css` — complete token system, utility classes, animations
 - `src/components/ui/design.tsx` — `Icon`, `Pill`, `Btn`, `SectionLabel`, `Stat`, `StatusDot`
 - `src/components/layout/sidebar.tsx` — 224px, paper-2, quota bar
 
+### Phase 6 · Production hardening ✓ (commit b36ef59)
+- **Sidebar quota bar** — reads `emailAccounts.sentToday / dailyQuota` live; progress bar computed
+- **Sidebar inbox badge** — counts `replies` where `classification IN ('positive','question')` joined through user's campaigns
+- **Campaign detail `positive` count** — joins `replies` table on `emailId IN campaign emails`, count `classification='positive'`
+- **Suppression remove** — `removeFromSuppression` server action in `suppression/actions.ts`; button is now wired and styled red
+- **Settings usage stats** — counts `emails` with `status='sent'` since month start, estimates `$cost = count × $0.065`, counts distinct `leadId`s for "Leads researched"
+
 ---
 
-## Known gaps / immediate fixes needed
+## Remaining gaps (manual / env setup)
 
-| Issue | File | Fix |
+| Issue | Where | Action |
 |---|---|---|
-| Sidebar quota bar hardcoded (142/350) | `sidebar.tsx` | Query `emailAccounts.sentToday / dailyQuota` for current user |
-| Settings usage stats hardcoded ($0, 0 emails) | `settings/page.tsx` | Count from `emails` + estimate API cost |
-| Campaign detail `positive` count always 0 | `[campaignId]/page.tsx` | Join `replies` table, count `classification='positive'` |
-| Suppression "remove" button does nothing | `suppression/page.tsx` | Add server action: `DELETE FROM suppression_list WHERE userId=… AND email=…` |
-| Inbox "Mark handled" does nothing | `inbox-client.tsx` | Add a `handled` boolean column to `replies` or filter by it |
-| Onboarding only shows postal form; OAuth not gated | `onboarding/page.tsx` | Step 0 should enforce Gmail connected before step 1 |
-| Google OAuth in Testing mode | Google Cloud Console | Add testers OR submit for verification (needs privacy policy URL) |
-| Inngest cloud keys not set on Vercel | Vercel env vars | Add `INNGEST_EVENT_KEY` + `INNGEST_SIGNING_KEY` from app.inngest.com |
+| Inbox "Mark handled" does nothing | `inbox-client.tsx` | Phase 8: add `handledAt` column + migration + server action |
+| Onboarding doesn't gate Gmail OAuth | `onboarding/page.tsx` | Step 0 should block step 1 until Gmail is connected |
+| Google OAuth in Testing mode | Google Cloud Console | Add `siddharth77work@gmail.com` as test user **OR** publish (needs privacy policy) |
+| Inngest cloud keys missing on Vercel | Vercel env vars | Add `INNGEST_EVENT_KEY` + `INNGEST_SIGNING_KEY` from app.inngest.com |
 
 ---
 
 ## Next phases
 
-### Phase 6 · Production hardening
-**Goal:** Everything actually works end-to-end on Vercel with real leads.
-
-1. Wire live quota/usage into sidebar + settings (replace hardcoded values)
-2. Fix `positive` reply count in campaign detail — join `replies` on `emails.campaignId`
-3. Add server actions for: suppression remove, inbox mark-handled, settings save (daily cap, min gap)
-4. Smoke test the full pipeline: create campaign → upload 5 leads → generate samples → launch → confirm Inngest jobs fire → confirm send → confirm reply detection
-5. Set `INNGEST_EVENT_KEY` + `INNGEST_SIGNING_KEY` in Vercel (get from app.inngest.com)
-6. Add `siddharth77work@gmail.com` as Google OAuth test user (or publish the OAuth app — needs privacy policy page)
-
 ### Phase 7 · Privacy policy + OAuth verification
 **Goal:** Unblock any Google account from signing in (currently restricted to test users).
 
 1. Create `src/app/privacy/page.tsx` — minimal privacy policy (what data collected, how used, contact email)
-2. Go to Google Cloud Console → OAuth consent screen → **Publish app** → submit for verification
+2. Google Cloud Console → OAuth consent screen → **Publish app** → submit for verification
 3. Fill in: App homepage = `bettr-cold-email.vercel.app`, Privacy policy = `bettr-cold-email.vercel.app/privacy`
-4. Google review takes 1–7 days for apps with sensitive scopes (`gmail.send`, `gmail.modify`)
+4. Google review takes 1–7 days for sensitive scopes (`gmail.send`, `gmail.modify`)
 
 ### Phase 8 · Reply management UI
 **Goal:** Inbox is read-only today; replies need actionable workflows.
 
-1. `replies` table: add `handledAt timestamp` column + migration
-2. Inbox "Mark handled" server action — stamps `handledAt`, removes from actionable filter
-3. "Reply in Gmail" already opens `mailto:` — wire it to actual thread deep-link (`https://mail.google.com/mail/#inbox/${threadId}`)
+1. `replies` table: add `handledAt timestamp` column + `drizzle-kit generate` + push migration
+2. Inbox "Mark handled" server action — stamps `handledAt`, excludes from actionable filter
+3. "Reply in Gmail" — wire to thread deep-link: `https://mail.google.com/mail/#inbox/${threadId}` instead of `mailto:`
 4. Auto-stop logic: when reply is `positive` or `negative`, set `leads.status = 'stopped'` and cancel pending follow-ups (Inngest cancel by `leadId` key)
 
 ### Phase 9 · Multi-account + billing
 **Goal:** Support more than one sender account + enforce plan limits.
 
-1. Remove the `uniqueIndex("one_active_email_account_per_user")` constraint
-2. Per-campaign: let user pick which connected account to send from (`emailAccountId` FK on `campaigns`)
-3. Track API spend per campaign (store in a `usage_log` table: `userId, campaignId, model, inputTokens, outputTokens, createdAt`)
-4. Enforce monthly email cap at send time (query `emails` count for current calendar month)
-5. Stripe integration: checkout session on sign-up, webhook stamps `users.plan`, gate launch behind `plan='paid'`
+1. Remove `uniqueIndex("one_active_email_account_per_user")` constraint
+2. Per-campaign: let user pick which connected account (`emailAccountId` FK on `campaigns`)
+3. Track API spend per campaign (`usage_log` table: `userId, campaignId, model, inputTokens, outputTokens, createdAt`)
+4. Enforce monthly email cap at send time
+5. Stripe: checkout session on sign-up, webhook stamps `users.plan`, gate launch behind `plan='paid'`
 
 ### Phase 10 · Outlook + other providers
-**Goal:** Gmail monopoly removed.
+**Goal:** Remove Gmail monopoly.
 
 1. Microsoft OAuth flow in `src/app/api/oauth/microsoft/` (similar to existing Google flow)
 2. Abstract `src/lib/email/gmail.ts` behind `src/lib/email/send.ts` interface: `sendEmail({ account, to, subject, body, threadId })`
@@ -122,7 +117,7 @@ src/
     page.tsx                          # Landing
     onboarding/page.tsx               # Postal address + Gmail connect
     dashboard/
-      layout.tsx                      # AppShell + auth gate
+      layout.tsx                      # AppShell + auth gate + quota/inbox fetch
       page.tsx                        # Campaign list + stat strip
       campaigns/
         new/
@@ -130,15 +125,17 @@ src/
           actions.ts                  # createCampaign, launchCampaign, generateSamples
           sequence-builder.tsx        # Client: add/remove steps
         [campaignId]/
-          page.tsx                    # Campaign detail + leads table
+          page.tsx                    # Campaign detail + leads table + positive count
           leads/[leadId]/
             page.tsx                  # Server: fetch trace data
             lead-trace-client.tsx     # Client: animated 6-stage reveal
       inbox/
         page.tsx                      # Server: fetch replies
         inbox-client.tsx              # Client: split panel
-      suppression/page.tsx
-      settings/page.tsx
+      suppression/
+        page.tsx                      # Suppression list
+        actions.ts                    # removeFromSuppression server action
+      settings/page.tsx               # Account + usage stats (live)
   api/
     inngest/route.ts                  # Inngest handler (all 5 functions)
     oauth/google/                     # start + callback
@@ -148,7 +145,7 @@ src/
     webhooks/clerk/                   # User sync
   components/
     ui/design.tsx                     # Icon, Pill, Btn, SectionLabel, Stat, StatusDot
-    layout/sidebar.tsx
+    layout/sidebar.tsx                # 224px sidebar — props: sentToday, dailyQuota, inboxCount
   db/schema.ts                        # Single source of truth for all tables
   inngest/
     client.ts                         # Typed Events
