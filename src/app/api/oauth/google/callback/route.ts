@@ -4,7 +4,6 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { emailAccounts } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
 import { getGoogleClient } from "@/lib/oauth/google";
 import {
   OAUTH_PKCE_COOKIE,
@@ -82,26 +81,13 @@ export async function GET(req: Request) {
   const { email } = (await userInfoRes.json()) as { email?: string };
   if (!email) return settingsRedirect("error=no_email");
 
-  // Mark any existing active account for this user as revoked first,
-  // then insert the new one. (Partial unique index allows only one active.)
-  await db.transaction(async (tx) => {
-    await tx
-      .update(emailAccounts)
-      .set({ status: "revoked" })
-      .where(
-        and(
-          eq(emailAccounts.userId, userId),
-          eq(emailAccounts.status, "active")
-        )
-      );
-    await tx.insert(emailAccounts).values({
-      userId,
-      provider: "gmail",
-      oauthAccessToken: await encryptToken(accessToken),
-      oauthRefreshToken: await encryptToken(refreshToken),
-      oauthExpiresAt: accessTokenExpiresAt,
-      status: "active",
-    });
+  await db.insert(emailAccounts).values({
+    userId,
+    provider: "gmail",
+    oauthAccessToken: await encryptToken(accessToken),
+    oauthRefreshToken: await encryptToken(refreshToken),
+    oauthExpiresAt: accessTokenExpiresAt,
+    status: "active",
   });
 
   return settingsRedirect(`connected=${encodeURIComponent(email)}`);

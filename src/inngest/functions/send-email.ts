@@ -8,10 +8,11 @@ import {
   suppressionList,
   users,
   sequenceSteps,
+  usageLog,
 } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { getAccessTokenForAccount } from "@/lib/oauth/tokens";
-import { sendGmailMessage } from "@/lib/email/gmail";
+import { sendMessage } from "@/lib/email/send";
 import { wrapTrackingForBody } from "@/lib/email/wrap";
 
 // Pacing: random gap between sends per account (humanize timing)
@@ -58,17 +59,23 @@ export const sendEmailFn = inngest.createFunction(
         .where(eq(campaigns.id, email.campaignId));
       if (!campaign) throw new Error(`campaign ${email.campaignId} not found`);
 
-      // pick an active account for this user
-      const [account] = await db
-        .select()
-        .from(emailAccounts)
-        .where(
-          and(
-            eq(emailAccounts.userId, campaign.userId),
-            eq(emailAccounts.status, "active")
-          )
-        );
-      if (!account) {
+      // Use the campaign's designated account if set; fall back to first active
+      const accountQuery = campaign.emailAccountId
+        ? db
+            .select()
+            .from(emailAccounts)
+            .where(eq(emailAccounts.id, campaign.emailAccountId))
+        : db
+            .select()
+            .from(emailAccounts)
+            .where(
+              and(
+                eq(emailAccounts.userId, campaign.userId),
+                eq(emailAccounts.status, "active")
+              )
+            );
+      const [account] = await accountQuery;
+      if (!account || account.status !== "active") {
         return { skip: true as const, reason: "no_active_account" };
       }
 
@@ -153,9 +160,8 @@ export const sendEmailFn = inngest.createFunction(
       getAccessTokenForAccount(ctx.account.id)
     );
 
-    const sendResult = await step.run("gmail-send", async () => {
-      return sendGmailMessage({
-        accessToken,
+    const sendResult = await step.run("send", async () => {
+      return sendMessage(ctx.account, accessToken, {
         from: ctx.user.email,
         to: ctx.lead.email,
         subject: ctx.email.subject,
@@ -186,6 +192,15 @@ export const sendEmailFn = inngest.createFunction(
         .update(emailAccounts)
         .set({ sentToday: ctx.account.sentToday + 1 })
         .where(eq(emailAccounts.id, ctx.account.id));
+      await db.insert(usageLog).values({
+        userId: ctx.campaign.userId,
+        campaignId: ctx.campaign.id,
+        model: "opus",
+        inputTokens: 2000,
+        outputTokens: Math.ceil(
+          (ctx.email.body.length + ctx.email.subject.length) / 4
+        ),
+      });
     });
 
     // Schedule follow-up if next sequence step exists with delay > 0

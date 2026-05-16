@@ -68,6 +68,7 @@ export async function createCampaign(formData: FormData): Promise<void> {
         senderPersona: input.senderPersona.trim(),
         valueProp: input.valueProp.trim(),
         status: "draft",
+        emailAccountId: String(formData.get("emailAccountId") || "") || null,
       })
       .returning({ id: campaigns.id });
 
@@ -138,6 +139,11 @@ export async function launchCampaign(campaignId: string): Promise<void> {
     .from(campaigns)
     .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
   if (!campaign) throw new Error("campaign not found");
+
+  const [user] = await db.select().from(users).where(eq(users.id, userId));
+  if (!user || user.plan !== "paid") {
+    redirect(`/dashboard/campaigns/${campaignId}?error=upgrade_required`);
+  }
 
   // Mark launched first so process-lead fans out email/send immediately
   await db
