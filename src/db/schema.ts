@@ -210,6 +210,7 @@ export const replies = pgTable("replies", {
   summary: text("summary"),
   classifiedAt: timestamp("classified_at", { withTimezone: true }),
   receivedAt: timestamp("received_at", { withTimezone: true }).defaultNow().notNull(),
+  handledAt: timestamp("handled_at", { withTimezone: true }),
 });
 
 // ---------- suppression_list ----------
