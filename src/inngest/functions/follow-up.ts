@@ -23,6 +23,7 @@ export const followUpFn = inngest.createFunction(
   {
     id: "lead-follow-up",
     triggers: [{ event: "lead/follow-up" }],
+    cancelOn: [{ event: "lead/stopped", match: "data.leadId" }],
     concurrency: { limit: 5, key: "event.data.leadId" },
     retries: 2,
   },
