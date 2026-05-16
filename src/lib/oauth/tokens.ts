@@ -3,8 +3,9 @@ import { emailAccounts } from "@/db/schema";
 import { and, eq } from "drizzle-orm";
 import { decryptToken, encryptToken } from "@/lib/crypto/encrypt";
 import { getGoogleClient } from "@/lib/oauth/google";
+import { getMicrosoftClient, MICROSOFT_SCOPES } from "@/lib/oauth/microsoft";
 
-const REFRESH_SKEW_MS = 60_000; // refresh if expires within 60s
+const REFRESH_SKEW_MS = 60_000;
 
 export async function getAccessTokenForAccount(
   accountId: string
@@ -26,28 +27,39 @@ export async function getAccessTokenForAccount(
   }
 
   const originalCipher = row.oauthAccessToken;
-
   const refreshToken = await decryptToken(row.oauthRefreshToken);
-  const tokens = await getGoogleClient().refreshAccessToken(refreshToken);
-  const newAccess = tokens.accessToken();
-  const newExpiresAt = tokens.accessTokenExpiresAt();
 
-  // Google sometimes rotates the refresh token; if so, persist the new one
+  let newAccess: string;
+  let newExpiresAt: Date;
   let nextRefreshEncrypted = row.oauthRefreshToken;
-  try {
-    const maybeNewRefresh = tokens.refreshToken();
-    if (maybeNewRefresh && maybeNewRefresh !== refreshToken) {
-      nextRefreshEncrypted = await encryptToken(maybeNewRefresh);
+
+  if (row.provider === "outlook") {
+    const tokens = await getMicrosoftClient().refreshAccessToken(refreshToken, MICROSOFT_SCOPES);
+    newAccess = tokens.accessToken();
+    newExpiresAt = tokens.accessTokenExpiresAt();
+    try {
+      const maybeNewRefresh = tokens.refreshToken();
+      if (maybeNewRefresh && maybeNewRefresh !== refreshToken) {
+        nextRefreshEncrypted = await encryptToken(maybeNewRefresh);
+      }
+    } catch {
+      // Microsoft may not rotate refresh token
     }
-  } catch {
-    // refreshToken() throws if not present — leave stored value alone
+  } else {
+    const tokens = await getGoogleClient().refreshAccessToken(refreshToken);
+    newAccess = tokens.accessToken();
+    newExpiresAt = tokens.accessTokenExpiresAt();
+    try {
+      const maybeNewRefresh = tokens.refreshToken();
+      if (maybeNewRefresh && maybeNewRefresh !== refreshToken) {
+        nextRefreshEncrypted = await encryptToken(maybeNewRefresh);
+      }
+    } catch {
+      // Google may not rotate refresh token
+    }
   }
 
-  // Optimistic lock: only persist our newly-refreshed token if no other
-  // process beat us to it. WHERE oauthAccessToken = <original ciphertext>
-  // ensures we lose the race silently when a concurrent refresh has already
-  // written a fresher token. In that case we re-read and return the winner's
-  // value rather than racing past it with a stale reissue.
+  // Optimistic lock: only persist if no concurrent refresh beat us
   const updated = await db
     .update(emailAccounts)
     .set({
@@ -64,8 +76,6 @@ export async function getAccessTokenForAccount(
     .returning({ id: emailAccounts.id });
 
   if (updated.length === 0) {
-    // Lost the race — another process refreshed first. Re-read and return
-    // whatever is canonical now.
     const [reread] = await db
       .select()
       .from(emailAccounts)
