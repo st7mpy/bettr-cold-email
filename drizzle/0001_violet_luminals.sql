@@ -1,0 +1,1 @@
+ALTER TABLE "replies" ADD COLUMN "handled_at" timestamp with time zone;
