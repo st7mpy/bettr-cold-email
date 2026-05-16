@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { db } from "@/db";
-import { emailAccounts, suppressionList, campaigns, emails } from "@/db/schema";
+import { emailAccounts, suppressionList, campaigns, emails, users } from "@/db/schema";
+import { UpgradeButton } from "./upgrade-button";
 import { and, eq, ne, desc, gte, inArray } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { Pill, SectionLabel, Icon } from "@/components/ui/design";
@@ -15,12 +16,14 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ connected?: string; error?: string; tested?: string }>;
+  searchParams: Promise<{ connected?: string; error?: string; tested?: string; upgraded?: string; upgrade_cancelled?: string }>;
 }) {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
   const params = await searchParams;
+
+  const [userRow] = await db.select().from(users).where(eq(users.id, userId));
 
   const accounts = await db
     .select()
@@ -95,6 +98,50 @@ export default async function SettingsPage({
 
       <div className="page-body">
         {/* Banner messages */}
+        {userRow?.plan !== "paid" && (
+          <div
+            style={{
+              marginBottom: 24,
+              padding: "16px 20px",
+              background: "var(--accent-soft)",
+              border: "1px solid var(--accent-line)",
+              borderRadius: 6,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 16,
+            }}
+          >
+            <div>
+              <div
+                className="mono"
+                style={{ fontSize: 11, color: "var(--accent)", letterSpacing: ".1em", marginBottom: 4 }}
+              >
+                FREE PLAN
+              </div>
+              <div style={{ fontSize: 13.5, color: "var(--ink)" }}>
+                Upgrade to send campaigns. $29/month — 1,000 emails, API costs pass-through.
+              </div>
+            </div>
+            <UpgradeButton />
+          </div>
+        )}
+        {params.upgraded && (
+          <div
+            style={{
+              marginBottom: 24,
+              padding: "12px 16px",
+              background: "var(--good-soft)",
+              border: "1px solid var(--good)",
+              borderRadius: 6,
+              fontSize: 13,
+              color: "var(--good)",
+            }}
+            className="mono"
+          >
+            Subscription activated. You can now launch campaigns.
+          </div>
+        )}
         {params.connected && (
           <div
             style={{
@@ -246,6 +293,31 @@ export default async function SettingsPage({
                     </div>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Connect Outlook */}
+            <div>
+              <SectionLabel>Connect Outlook</SectionLabel>
+              <div className="card" style={{ padding: 24 }}>
+                <p
+                  style={{
+                    fontSize: 13.5,
+                    color: "var(--ink-2)",
+                    marginBottom: 16,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Connect a Microsoft 365 or Outlook.com account to send from that inbox.
+                </p>
+                <a
+                  href="/api/oauth/microsoft/start"
+                  className="btn btn-outline"
+                  style={{ gap: 8 }}
+                >
+                  <Icon name="mail" size={15} />
+                  Connect Outlook
+                </a>
               </div>
             </div>
 
