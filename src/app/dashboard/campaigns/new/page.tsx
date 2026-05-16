@@ -69,13 +69,13 @@ export default async function NewCampaignPage() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  const [account] = await db
+  const accounts = await db
     .select()
     .from(emailAccounts)
     .where(
       and(eq(emailAccounts.userId, userId), eq(emailAccounts.status, "active"))
     );
-  if (!account) redirect("/dashboard/settings?error=no_account");
+  if (accounts.length === 0) redirect("/dashboard/settings?error=no_account");
 
   const [user] = await db.select().from(users).where(eq(users.id, userId));
 
@@ -280,6 +280,30 @@ export default async function NewCampaignPage() {
               .
             </div>
           </Section>
+
+          {/* § 05 — Sending account (visible only when multiple connected) */}
+          {accounts.length > 1 ? (
+            <Section
+              num={5}
+              title="Send from"
+              sub="Pick which connected inbox sends this campaign."
+            >
+              <select
+                className="input"
+                name="emailAccountId"
+                defaultValue={accounts[0].id}
+                style={{ maxWidth: 360 }}
+              >
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    Account {a.id.slice(0, 8)}…
+                  </option>
+                ))}
+              </select>
+            </Section>
+          ) : (
+            <input type="hidden" name="emailAccountId" value={accounts[0].id} />
+          )}
 
           {/* Footer actions */}
           <div
