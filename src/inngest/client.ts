@@ -26,4 +26,9 @@ export type Events = {
       nextStepIndex: number;
     };
   };
+  "lead/stopped": {
+    data: {
+      leadId: string;
+    };
+  };
 };
