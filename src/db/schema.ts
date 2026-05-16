@@ -1,4 +1,3 @@
-import { sql } from "drizzle-orm";
 import {
   pgTable,
   pgEnum,
@@ -60,7 +59,8 @@ export const users = pgTable("users", {
   id: text("id").primaryKey(), // Clerk user id
   email: text("email").notNull(),
   plan: text("plan").default("free").notNull(),
-  postalAddress: text("postal_address"), // null until onboarding complete
+  postalAddress: text("postal_address"),
+  stripeCustomerId: text("stripe_customer_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
@@ -83,13 +83,7 @@ export const emailAccounts = pgTable(
     watchExpiresAt: timestamp("watch_expires_at", { withTimezone: true }),
     status: emailAccountStatusEnum("status").default("active").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  },
-  (t) => [
-    // MVP constraint: at most one active account per user
-    uniqueIndex("one_active_email_account_per_user")
-      .on(t.userId)
-      .where(sql`status = 'active'`),
-  ]
+  }
 );
 
 // ---------- campaigns ----------
@@ -106,6 +100,9 @@ export const campaigns = pgTable("campaigns", {
   status: campaignStatusEnum("status").default("draft").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   launchedAt: timestamp("launched_at", { withTimezone: true }),
+  emailAccountId: uuid("email_account_id").references(() => emailAccounts.id, {
+    onDelete: "set null",
+  }),
 });
 
 // ---------- sequence_steps ----------
@@ -226,3 +223,18 @@ export const suppressionList = pgTable(
   },
   (t) => [primaryKey({ columns: [t.userId, t.email] })]
 );
+
+// ---------- usage_log ----------
+export const usageLog = pgTable("usage_log", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  campaignId: uuid("campaign_id").references(() => campaigns.id, {
+    onDelete: "set null",
+  }),
+  model: text("model").notNull(),
+  inputTokens: integer("input_tokens").default(0).notNull(),
+  outputTokens: integer("output_tokens").default(0).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
