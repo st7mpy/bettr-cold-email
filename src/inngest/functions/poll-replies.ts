@@ -147,6 +147,12 @@ async function pollAccount(accountId: string, userId: string): Promise<void> {
     switch (result.classification) {
       case "positive":
       case "negative":
+        await db
+          .update(leads)
+          .set({ status: "stopped" })
+          .where(eq(leads.id, lead.id));
+        await inngest.send({ name: "lead/stopped", data: { leadId: lead.id } });
+        break;
       case "question":
         await db
           .update(leads)
@@ -162,6 +168,7 @@ async function pollAccount(accountId: string, userId: string): Promise<void> {
           .insert(suppressionList)
           .values({ userId, email: lead.email, reason: "unsubscribed" })
           .onConflictDoNothing();
+        await inngest.send({ name: "lead/stopped", data: { leadId: lead.id } });
         break;
       case "out_of_office":
       case "unrelated":
