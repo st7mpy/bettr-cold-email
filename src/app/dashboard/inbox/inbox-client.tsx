@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, startTransition } from "react";
 import Link from "next/link";
-import { Pill, StatusDot } from "@/components/ui/design";
+import { Pill } from "@/components/ui/design";
+import { markHandled } from "./actions";
 
 type Classification =
   | "positive"
@@ -19,8 +20,10 @@ interface ReplyRow {
   summary: string | null;
   rawBody: string;
   receivedAt: Date | null;
+  handledAt: Date | null;
   emailId: string;
   emailSubject: string;
+  threadId: string | null;
   leadId: string;
   leadName: string | null;
   leadEmail: string;
@@ -67,24 +70,33 @@ function relativeTime(d: Date | null): string {
 
 export function InboxClient({ rows, initialFilter }: Props) {
   const [filter, setFilter] = useState(initialFilter);
-  const [selectedId, setSelectedId] = useState<string | null>(
-    rows[0]?.id ?? null
-  );
+  const [selectedId, setSelectedId] = useState<string | null>(rows[0]?.id ?? null);
+  const [handledIds, setHandledIds] = useState<Set<string>>(new Set());
+
+  function isHandled(row: ReplyRow) {
+    return row.handledAt !== null || handledIds.has(row.id);
+  }
 
   const filtered = rows.filter((r) => {
-    if (filter === "all") return true;
     if (filter === "actionable")
-      return r.classification === "positive" || r.classification === "question";
+      return (
+        (r.classification === "positive" || r.classification === "question") &&
+        !isHandled(r)
+      );
+    if (filter === "all") return true;
     return r.classification === filter;
   });
 
   const selected = filtered.find((r) => r.id === selectedId) ?? filtered[0] ?? null;
 
-  // Count per filter
+  const actionableCount = rows.filter(
+    (r) =>
+      (r.classification === "positive" || r.classification === "question") &&
+      !isHandled(r)
+  ).length;
+
   const counts: Record<string, number> = {
-    actionable: rows.filter(
-      (r) => r.classification === "positive" || r.classification === "question"
-    ).length,
+    actionable: actionableCount,
     all: rows.length,
     positive: rows.filter((r) => r.classification === "positive").length,
     question: rows.filter((r) => r.classification === "question").length,
@@ -92,6 +104,23 @@ export function InboxClient({ rows, initialFilter }: Props) {
     out_of_office: rows.filter((r) => r.classification === "out_of_office").length,
     unsubscribe: rows.filter((r) => r.classification === "unsubscribe").length,
   };
+
+  function handleMarkHandled(replyId: string) {
+    setHandledIds((prev) => {
+      const next = new Set(prev);
+      next.add(replyId);
+      return next;
+    });
+    startTransition(() => {
+      markHandled(replyId);
+    });
+  }
+
+  const gmailHref = selected?.threadId
+    ? `https://mail.google.com/mail/#inbox/${selected.threadId}`
+    : selected
+      ? `mailto:${selected.leadEmail}`
+      : "#";
 
   return (
     <div>
@@ -111,13 +140,9 @@ export function InboxClient({ rows, initialFilter }: Props) {
         >
           <h1
             className="display"
-            style={{
-              fontSize: 54,
-              lineHeight: 1,
-              letterSpacing: "-0.035em",
-            }}
+            style={{ fontSize: 54, lineHeight: 1, letterSpacing: "-0.035em" }}
           >
-            {counts.actionable} need attention.
+            {actionableCount} need attention.
           </h1>
         </div>
 
@@ -175,12 +200,7 @@ export function InboxClient({ rows, initialFilter }: Props) {
         }}
       >
         {/* Left: reply list */}
-        <div
-          style={{
-            borderRight: "1px solid var(--hairline)",
-            overflowY: "auto",
-          }}
-        >
+        <div style={{ borderRight: "1px solid var(--hairline)", overflowY: "auto" }}>
           {filtered.length === 0 && (
             <div
               style={{ padding: "32px 24px", color: "var(--muted)", fontSize: 14 }}
@@ -209,13 +229,11 @@ export function InboxClient({ rows, initialFilter }: Props) {
                 }}
                 onMouseEnter={(e) => {
                   if (!isSelected)
-                    (e.currentTarget as HTMLElement).style.background =
-                      "var(--paper-2)";
+                    (e.currentTarget as HTMLElement).style.background = "var(--paper-2)";
                 }}
                 onMouseLeave={(e) => {
                   if (!isSelected)
-                    (e.currentTarget as HTMLElement).style.background =
-                      "transparent";
+                    (e.currentTarget as HTMLElement).style.background = "transparent";
                 }}
               >
                 <div
@@ -226,13 +244,7 @@ export function InboxClient({ rows, initialFilter }: Props) {
                     marginBottom: 4,
                   }}
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <span style={{ fontSize: 13.5, fontWeight: 500 }}>
                       {r.leadName ?? r.leadEmail}
                     </span>
@@ -273,13 +285,7 @@ export function InboxClient({ rows, initialFilter }: Props) {
 
         {/* Right: detail panel */}
         {selected ? (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              overflowY: "auto",
-            }}
-          >
+          <div style={{ display: "flex", flexDirection: "column", overflowY: "auto" }}>
             {/* Header band */}
             <div
               style={{
@@ -321,9 +327,7 @@ export function InboxClient({ rows, initialFilter }: Props) {
                   {selected.classification ?? "unclassified"}
                 </Pill>
                 {selected.classificationConfidence != null && (
-                  <Pill>
-                    {selected.classificationConfidence}% confidence
-                  </Pill>
+                  <Pill>{selected.classificationConfidence}% confidence</Pill>
                 )}
               </div>
             </div>
@@ -389,12 +393,24 @@ export function InboxClient({ rows, initialFilter }: Props) {
               }}
             >
               <a
-                href={`mailto:${selected.leadEmail}`}
+                href={gmailHref}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="btn btn-primary btn-sm"
               >
                 Reply in Gmail
               </a>
-              <button className="btn btn-outline btn-sm">Mark handled</button>
+              <button
+                onClick={() => handleMarkHandled(selected.id)}
+                disabled={isHandled(selected)}
+                className="btn btn-outline btn-sm"
+                style={{
+                  opacity: isHandled(selected) ? 0.45 : 1,
+                  cursor: isHandled(selected) ? "default" : "pointer",
+                }}
+              >
+                {isHandled(selected) ? "Handled" : "Mark handled"}
+              </button>
               <div style={{ flex: 1 }} />
               <Link
                 href={`/dashboard/campaigns/${selected.campaignId}/leads/${selected.leadId}`}
