@@ -51,3 +51,6 @@ coverage/
 .turbo/
 
 .vercel
+.claude/
+docs/superpowers/
+HANDOFF.md
