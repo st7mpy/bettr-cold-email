@@ -11,6 +11,7 @@ import {
   emails,
   replies,
   suppressionList,
+  usageLog,
 } from "./schema";
 
 describe("schema", () => {
@@ -37,5 +38,6 @@ describe("schema", () => {
     expect(
       Array.isArray(await db.select().from(suppressionList).limit(1))
     ).toBe(true);
+    expect(Array.isArray(await db.select().from(usageLog).limit(1))).toBe(true);
   });
 });
