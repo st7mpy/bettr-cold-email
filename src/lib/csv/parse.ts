@@ -31,6 +31,11 @@ const HEADER_MAP: Record<string, MappedField> = {
   email: "email",
   "email address": "email",
   "e-mail": "email",
+  "e mail": "email",
+  mail: "email",
+  "work email": "email",
+  "work_email": "email",
+  emailaddress: "email",
   name: "name",
   "full name": "name",
   "first name": "first",
@@ -55,7 +60,10 @@ function normalize(h: string): string {
 }
 
 export function parseCsv(input: string): ParseResult {
-  const parsed = Papa.parse<Record<string, string>>(input, {
+  // Strip UTF-8 BOM that Excel/Numbers add to exported CSVs — otherwise the
+  // first header becomes invisibly-prefixed and won't match HEADER_MAP.
+  const cleaned = input.replace(/^﻿/, "");
+  const parsed = Papa.parse<Record<string, string>>(cleaned, {
     header: true,
     skipEmptyLines: true,
     transformHeader: (h) => h.trim(),

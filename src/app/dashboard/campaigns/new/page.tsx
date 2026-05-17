@@ -65,9 +65,15 @@ function Section({
   );
 }
 
-export default async function NewCampaignPage() {
+export default async function NewCampaignPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
+
+  const { error: errorParam } = await searchParams;
 
   const accounts = await db
     .select()
@@ -149,6 +155,24 @@ export default async function NewCampaignPage() {
           alignItems: "start",
         }}
       >
+        {errorParam && (
+          <div
+            className="mono"
+            style={{
+              gridColumn: "1 / -1",
+              marginBottom: 24,
+              padding: "12px 16px",
+              background: "oklch(0.97 0.02 25)",
+              border: "1px solid var(--bad)",
+              borderRadius: 6,
+              fontSize: 13,
+              color: "var(--bad)",
+            }}
+          >
+            {decodeURIComponent(errorParam)}
+          </div>
+        )}
+
         <form
           action={createCampaign}
           style={{ display: "flex", flexDirection: "column", gap: 40 }}

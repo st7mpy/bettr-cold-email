@@ -16,12 +16,17 @@ interface CreateInput {
   valueProp: string;
 }
 
-function validate(i: CreateInput) {
-  if (i.name.trim().length < 2) throw new Error("Campaign name is required");
+function validate(i: CreateInput): string | null {
+  if (i.name.trim().length < 2) return "Campaign name is required";
   if (i.senderPersona.trim().length < 10)
-    throw new Error("Sender persona must be at least 10 chars");
+    return "Sender persona must be at least 10 chars";
   if (i.valueProp.trim().length < 10)
-    throw new Error("Value prop must be at least 10 chars");
+    return "Value prop must be at least 10 chars";
+  return null;
+}
+
+function backWithError(msg: string): never {
+  redirect(`/dashboard/campaigns/new?error=${encodeURIComponent(msg)}`);
 }
 
 export async function createCampaign(formData: FormData): Promise<void> {
@@ -47,13 +52,26 @@ export async function createCampaign(formData: FormData): Promise<void> {
     senderPersona: String(formData.get("senderPersona") ?? ""),
     valueProp: String(formData.get("valueProp") ?? ""),
   };
-  validate(input);
+  const validationErr = validate(input);
+  if (validationErr) backWithError(validationErr);
 
   const csvText = String(formData.get("csvText") ?? "");
-  if (!csvText.trim()) throw new Error("CSV is empty");
-  const parsed = parseCsv(csvText);
+  if (!csvText.trim()) backWithError("CSV is empty — paste at least one lead row.");
+
+  let parsed;
+  try {
+    parsed = parseCsv(csvText);
+  } catch (e) {
+    backWithError(e instanceof Error ? e.message : "CSV failed to parse");
+  }
   if (parsed.leads.length === 0) {
-    throw new Error(`CSV had no usable rows (${parsed.rejected.length} rejected)`);
+    const sample = parsed.rejected
+      .slice(0, 3)
+      .map((r) => `row ${r.row}: ${r.reason}`)
+      .join("; ");
+    backWithError(
+      `No usable rows in CSV. Make sure the first line is a header with an "email" column. ${sample ? `Examples: ${sample}` : ""}`
+    );
   }
 
   const steps = parseStepsFromFormData(formData);
