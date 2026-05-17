@@ -3,8 +3,8 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { db } from "@/db";
-import { campaigns, sequenceSteps, leads, emailAccounts, users } from "@/db/schema";
-import { and, eq } from "drizzle-orm";
+import { campaigns, sequenceSteps, leads, emailAccounts, emails, users } from "@/db/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { parseCsv } from "@/lib/csv/parse";
 import { parseStepsFromFormData } from "@/lib/campaign/parse-steps";
 import { inngest } from "@/inngest/client";
@@ -140,9 +140,26 @@ export async function launchCampaign(campaignId: string): Promise<void> {
     .where(and(eq(campaigns.id, campaignId), eq(campaigns.userId, userId)));
   if (!campaign) throw new Error("campaign not found");
 
-  const [user] = await db.select().from(users).where(eq(users.id, userId));
-  if (!user || user.plan !== "paid") {
-    redirect(`/dashboard/campaigns/${campaignId}?error=upgrade_required`);
+  // Rate limit: new users can only send 2 emails total
+  const FREE_EMAIL_LIMIT = 2;
+  const userCampaigns = await db
+    .select({ id: campaigns.id })
+    .from(campaigns)
+    .where(eq(campaigns.userId, userId));
+  if (userCampaigns.length > 0) {
+    const campaignIds = userCampaigns.map((c) => c.id);
+    const sentEmails = await db
+      .select({ id: emails.id })
+      .from(emails)
+      .where(
+        and(
+          inArray(emails.campaignId, campaignIds),
+          eq(emails.status, "sent")
+        )
+      );
+    if (sentEmails.length >= FREE_EMAIL_LIMIT) {
+      redirect(`/dashboard/campaigns/${campaignId}?error=limit_reached`);
+    }
   }
 
   // Mark launched first so process-lead fans out email/send immediately

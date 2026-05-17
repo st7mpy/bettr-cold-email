@@ -60,7 +60,6 @@ export const users = pgTable("users", {
   email: text("email").notNull(),
   plan: text("plan").default("free").notNull(),
   postalAddress: text("postal_address"),
-  stripeCustomerId: text("stripe_customer_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
