@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { callOpusStructured } from "@/lib/llm/claude";
+import { callSonnetStructured } from "@/lib/llm/claude";
 import type { ScoredHook } from "./hooks";
 
 export type HookSelection =
@@ -103,7 +103,7 @@ ${hookText}
 
 Write the email now.`;
 
-  return callOpusStructured({
+  return callSonnetStructured({
     system: isNoSignal ? SYSTEM_NO_SIGNAL : SYSTEM_WITH_HOOK,
     user,
     schema: DraftSchema,

@@ -58,7 +58,7 @@ export async function createCampaign(formData: FormData): Promise<void> {
 
   const steps = parseStepsFromFormData(formData);
 
-  const campaignId = await db.transaction(async (tx) => {
+  const { campaignId, sampleLeadIds } = await db.transaction(async (tx) => {
     const [campaign] = await tx
       .insert(campaigns)
       .values({
@@ -81,21 +81,41 @@ export async function createCampaign(formData: FormData): Promise<void> {
       }))
     );
 
-    await tx.insert(leads).values(
-      parsed.leads.map((l) => ({
-        campaignId: campaign.id,
-        email: l.email,
-        name: l.name,
-        company: l.company,
-        title: l.title,
-        notes: l.notes,
-        customFields: l.customFields,
-        status: "pending" as const,
-      }))
-    );
+    const insertedLeads = await tx
+      .insert(leads)
+      .values(
+        parsed.leads.map((l) => ({
+          campaignId: campaign.id,
+          email: l.email,
+          name: l.name,
+          company: l.company,
+          title: l.title,
+          notes: l.notes,
+          customFields: l.customFields,
+          status: "pending" as const,
+        }))
+      )
+      .returning({ id: leads.id });
 
-    return campaign.id;
+    const sampleLeadIds = insertedLeads
+      .map((l) => l.id)
+      .sort(() => Math.random() - 0.5)
+      .slice(0, 3);
+
+    return { campaignId: campaign.id, sampleLeadIds };
   });
+
+  // "Create & sample" button → fire 3 lead/process events right away.
+  // "Save draft" button → just persist and redirect.
+  const action = String(formData.get("_action") ?? "");
+  if (action === "sample" && sampleLeadIds.length > 0) {
+    await Promise.all(
+      sampleLeadIds.map((leadId) =>
+        inngest.send({ name: "lead/process", data: { leadId } })
+      )
+    );
+    redirect(`/dashboard/campaigns/${campaignId}?sampling=1`);
+  }
 
   redirect(`/dashboard/campaigns/${campaignId}`);
 }

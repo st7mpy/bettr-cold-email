@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { callHaiku, callOpus } from "@/lib/llm/claude";
+import { callHaiku, callSonnet } from "@/lib/llm/claude";
 import type { ResearchOutput } from "./research";
 
 export const RawHookSchema = z.object({
@@ -102,28 +102,29 @@ export async function extractHooks(
   args: ExtractHooksArgs
 ): Promise<ScoredHook[]> {
   const user = buildUserPrompt(args);
-  const raw = await callHaiku({ system: SYSTEM, user, maxTokens: 2048 });
+  const raw = await callHaiku({ system: SYSTEM, user, maxTokens: 2048, cacheSystem: true });
   const parsed = HookListSchema.parse(JSON.parse(extractJson(raw)));
   let scored: ScoredHook[] = parsed.hooks.map((h) => ({
     ...h,
     specificity_score: scoreSpecificity(h),
   }));
 
-  // Hard-target escalation: if no hook reaches specificity ≥ 2, re-run with Opus
+  // Hard-target escalation: if no hook reaches specificity ≥ 2, re-run with Sonnet
   if (!scored.some((h) => h.specificity_score >= 2)) {
     try {
-      const opusRaw = await callOpus({
+      const escalatedRaw = await callSonnet({
         system: SYSTEM,
         user,
         maxTokens: 2048,
+        cacheSystem: true,
       });
-      const opusParsed = HookListSchema.parse(JSON.parse(extractJson(opusRaw)));
-      scored = opusParsed.hooks.map((h) => ({
+      const escalatedParsed = HookListSchema.parse(JSON.parse(extractJson(escalatedRaw)));
+      scored = escalatedParsed.hooks.map((h) => ({
         ...h,
         specificity_score: scoreSpecificity(h),
       }));
     } catch {
-      // If Opus also fails to produce valid output, keep the Haiku result
+      // If escalation also fails to produce valid output, keep the Haiku result
     }
   }
 

@@ -23,15 +23,18 @@ interface CallArgs {
   cacheSystem?: boolean;
 }
 
-function modelFor(tier: "opus" | "haiku"): string {
+function modelFor(tier: "opus" | "sonnet" | "haiku"): string {
   if (tier === "opus") {
     return process.env.ANTHROPIC_OPUS_MODEL || "claude-opus-4-7";
   }
-  return process.env.ANTHROPIC_HAIKU_MODEL || "claude-haiku-4-5";
+  if (tier === "sonnet") {
+    return process.env.ANTHROPIC_SONNET_MODEL || "claude-sonnet-4-6";
+  }
+  return process.env.ANTHROPIC_HAIKU_MODEL || "claude-haiku-4-5-20251001";
 }
 
 async function callTier(
-  tier: "opus" | "haiku",
+  tier: "opus" | "sonnet" | "haiku",
   args: CallArgs
 ): Promise<string> {
   const systemBlock = args.cacheSystem
@@ -61,6 +64,10 @@ export async function callHaiku(args: CallArgs): Promise<string> {
   return callTier("haiku", args);
 }
 
+export async function callSonnet(args: CallArgs): Promise<string> {
+  return callTier("sonnet", args);
+}
+
 export async function callOpus(args: CallArgs): Promise<string> {
   return callTier("opus", args);
 }
@@ -80,6 +87,14 @@ export async function callHaikuStructured<T>(
   args: StructuredArgs<T>
 ): Promise<T> {
   const raw = await callHaiku(args);
+  const json = JSON.parse(extractJson(raw));
+  return args.schema.parse(json);
+}
+
+export async function callSonnetStructured<T>(
+  args: StructuredArgs<T>
+): Promise<T> {
+  const raw = await callSonnet(args);
   const json = JSON.parse(extractJson(raw));
   return args.schema.parse(json);
 }

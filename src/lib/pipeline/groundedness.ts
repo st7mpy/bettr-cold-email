@@ -25,20 +25,23 @@ export async function verifyGroundedness(
   args: VerifyArgs
 ): Promise<ScoredHook[]> {
   const pageByUrl = new Map(args.pages.map((p) => [p.url, p.content]));
-  const verified: ScoredHook[] = [];
+  const verifiable = args.hooks
+    .map((hook) => ({ hook, page: pageByUrl.get(hook.source_url) }))
+    .filter((x): x is { hook: ScoredHook; page: string } => Boolean(x.page));
 
-  for (const hook of args.hooks) {
-    const page = pageByUrl.get(hook.source_url);
-    if (!page) continue; // can't verify → drop
+  const verdicts = await Promise.all(
+    verifiable.map(({ hook, page }) =>
+      callHaikuStructured({
+        system: SYSTEM,
+        user: `Claim: ${hook.fact}\n\nSource page (${hook.source_url}):\n${page.slice(0, 6000)}`,
+        schema: VerdictSchema,
+        maxTokens: 256,
+        cacheSystem: true,
+      })
+    )
+  );
 
-    const verdict = await callHaikuStructured({
-      system: SYSTEM,
-      user: `Claim: ${hook.fact}\n\nSource page (${hook.source_url}):\n${page.slice(0, 6000)}`,
-      schema: VerdictSchema,
-      maxTokens: 256,
-    });
-    if (verdict.supported) verified.push(hook);
-  }
-
-  return verified;
+  return verifiable
+    .filter((_, i) => verdicts[i].supported)
+    .map(({ hook }) => hook);
 }

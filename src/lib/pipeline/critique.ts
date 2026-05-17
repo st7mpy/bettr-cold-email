@@ -48,5 +48,6 @@ Run the six checks now.`;
     user,
     schema: CritiqueSchema,
     maxTokens: 512,
+    cacheSystem: true,
   });
 }

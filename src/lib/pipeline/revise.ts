@@ -1,4 +1,4 @@
-import { callOpusStructured } from "@/lib/llm/claude";
+import { callSonnetStructured } from "@/lib/llm/claude";
 import { DraftSchema, type Draft } from "./draft";
 import type { Critique } from "./critique";
 
@@ -26,10 +26,11 @@ Hook fact: ${args.hookFact ?? "(no hook)"}
 
 Rewrite the email to fix the failed checks.`;
 
-  return callOpusStructured({
+  return callSonnetStructured({
     system: SYSTEM,
     user,
     schema: DraftSchema,
     maxTokens: 800,
+    cacheSystem: true,
   });
 }

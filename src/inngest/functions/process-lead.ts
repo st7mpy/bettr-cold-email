@@ -15,8 +15,9 @@ export const processLeadFn = inngest.createFunction(
   {
     id: "process-lead",
     triggers: [{ event: "lead/process" }],
-    // Throttle to keep concurrent research polite to Tavily and bound LLM cost
-    concurrency: { limit: 5, key: "event.data.leadId" },
+    // Global throttle to keep concurrent research polite to Tavily and bound LLM cost.
+    // (Previously keyed on event.data.leadId — useless because each event has a unique leadId.)
+    concurrency: { limit: 5 },
     retries: 2,
   },
   async ({ event, step }: { event: { data: { leadId: string } }; step: any }) => {
