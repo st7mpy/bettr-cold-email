@@ -5,7 +5,17 @@ const isProtectedRoute = createRouteMatcher([
   "/onboarding(.*)",
 ]);
 
+// Service-to-service webhooks must never be touched by Clerk — they have their
+// own signature verification (Inngest signing key, Svix for Clerk webhooks).
+const isWebhookRoute = createRouteMatcher([
+  "/api/inngest(.*)",
+  "/api/webhooks/(.*)",
+  "/api/unsubscribe/(.*)",
+  "/api/track/(.*)",
+]);
+
 export default clerkMiddleware(async (auth, req) => {
+  if (isWebhookRoute(req)) return;
   if (isProtectedRoute(req)) {
     await auth.protect();
   }
@@ -13,7 +23,10 @@ export default clerkMiddleware(async (auth, req) => {
 
 export const config = {
   matcher: [
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
-    "/(api|trpc)(.*)",
+    // App pages — skip static files, _next internals, and webhook endpoints
+    "/((?!api/inngest|api/webhooks|api/unsubscribe|api/track|_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // API routes that DO need Clerk (everything under /api except webhooks/tracking)
+    "/api/((?!inngest|webhooks|unsubscribe|track).*)",
+    "/trpc/(.*)",
   ],
 };
