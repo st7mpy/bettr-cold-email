@@ -373,16 +373,8 @@ export default async function CampaignDetailPage({
                     gap: 8,
                     textDecoration: "none",
                     color: "inherit",
-                    transition: "background 120ms",
                   }}
-                  onMouseEnter={(e) =>
-                    ((e.currentTarget as HTMLElement).style.background =
-                      "var(--paper-2)")
-                  }
-                  onMouseLeave={(e) =>
-                    ((e.currentTarget as HTMLElement).style.background =
-                      "transparent")
-                  }
+                  className="row-hover"
                 >
                   <div>
                     <div style={{ fontSize: 13.5, fontWeight: 500 }}>

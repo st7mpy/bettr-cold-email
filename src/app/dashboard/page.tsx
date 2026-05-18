@@ -207,16 +207,8 @@ export default async function DashboardPage() {
                       gap: 16,
                       textDecoration: "none",
                       color: "inherit",
-                      transition: "background 120ms",
                     }}
-                    onMouseEnter={(e) =>
-                      ((e.currentTarget as HTMLElement).style.background =
-                        "var(--paper-2)")
-                    }
-                    onMouseLeave={(e) =>
-                      ((e.currentTarget as HTMLElement).style.background =
-                        "transparent")
-                    }
+                    className="row-hover"
                   >
                     {/* Index */}
                     <div
