@@ -134,6 +134,8 @@ export const leads = pgTable(
     company: text("company"),
     title: text("title"),
     notes: text("notes"),
+    linkedinUrl: text("linkedin_url"),
+    xUrl: text("x_url"),
     customFields: jsonb("custom_fields").default({}).notNull(),
     status: leadStatusEnum("status").default("pending").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -185,6 +187,8 @@ export const emails = pgTable(
     clickedAt: timestamp("clicked_at", { withTimezone: true }),
     repliedAt: timestamp("replied_at", { withTimezone: true }),
     bouncedAt: timestamp("bounced_at", { withTimezone: true }),
+    failedAt: timestamp("failed_at", { withTimezone: true }),
+    failureReason: text("failure_reason"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

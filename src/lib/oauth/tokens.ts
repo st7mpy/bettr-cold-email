@@ -33,30 +33,46 @@ export async function getAccessTokenForAccount(
   let newExpiresAt: Date;
   let nextRefreshEncrypted = row.oauthRefreshToken;
 
-  if (row.provider === "outlook") {
-    const tokens = await getMicrosoftClient().refreshAccessToken(refreshToken, MICROSOFT_SCOPES);
-    newAccess = tokens.accessToken();
-    newExpiresAt = tokens.accessTokenExpiresAt();
-    try {
-      const maybeNewRefresh = tokens.refreshToken();
-      if (maybeNewRefresh && maybeNewRefresh !== refreshToken) {
-        nextRefreshEncrypted = await encryptToken(maybeNewRefresh);
+  try {
+    if (row.provider === "outlook") {
+      const tokens = await getMicrosoftClient().refreshAccessToken(refreshToken, MICROSOFT_SCOPES);
+      newAccess = tokens.accessToken();
+      newExpiresAt = tokens.accessTokenExpiresAt();
+      try {
+        const maybeNewRefresh = tokens.refreshToken();
+        if (maybeNewRefresh && maybeNewRefresh !== refreshToken) {
+          nextRefreshEncrypted = await encryptToken(maybeNewRefresh);
+        }
+      } catch {
+        // Microsoft may not rotate refresh token
       }
-    } catch {
-      // Microsoft may not rotate refresh token
-    }
-  } else {
-    const tokens = await getGoogleClient().refreshAccessToken(refreshToken);
-    newAccess = tokens.accessToken();
-    newExpiresAt = tokens.accessTokenExpiresAt();
-    try {
-      const maybeNewRefresh = tokens.refreshToken();
-      if (maybeNewRefresh && maybeNewRefresh !== refreshToken) {
-        nextRefreshEncrypted = await encryptToken(maybeNewRefresh);
+    } else {
+      const tokens = await getGoogleClient().refreshAccessToken(refreshToken);
+      newAccess = tokens.accessToken();
+      newExpiresAt = tokens.accessTokenExpiresAt();
+      try {
+        const maybeNewRefresh = tokens.refreshToken();
+        if (maybeNewRefresh && maybeNewRefresh !== refreshToken) {
+          nextRefreshEncrypted = await encryptToken(maybeNewRefresh);
+        }
+      } catch {
+        // Google may not rotate refresh token
       }
-    } catch {
-      // Google may not rotate refresh token
     }
+  } catch (err) {
+    // Refresh failed permanently (invalid_grant: user revoked, password
+    // changed, or refresh token expired). Mark the account expired so
+    // poll-replies / send-email don't keep retrying every 15 minutes.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (/invalid_grant|invalid_request|unauthorized/i.test(msg)) {
+      await db
+        .update(emailAccounts)
+        .set({ status: "expired" })
+        .where(eq(emailAccounts.id, accountId));
+    }
+    throw new Error(
+      `OAuth refresh failed for account ${accountId} (${row.provider}): ${msg}`
+    );
   }
 
   // Optimistic lock: only persist if no concurrent refresh beat us

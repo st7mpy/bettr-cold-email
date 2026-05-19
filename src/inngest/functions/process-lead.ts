@@ -74,6 +74,8 @@ export const processLeadFn = inngest.createFunction(
         name: ctx.lead.name ?? "(unknown)",
         company: ctx.lead.company ?? "(unknown)",
         title: ctx.lead.title ?? undefined,
+        linkedinUrl: ctx.lead.linkedinUrl,
+        xUrl: ctx.lead.xUrl,
       });
       const expiresAt = new Date(
         Date.now() + RESEARCH_TTL_DAYS * 24 * 60 * 60 * 1000

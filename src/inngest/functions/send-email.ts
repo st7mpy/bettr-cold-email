@@ -161,17 +161,32 @@ export const sendEmailFn = inngest.createFunction(
     );
 
     const sendResult = await step.run("send", async () => {
-      return sendMessage(ctx.account, accessToken, {
-        from: ctx.user.email,
-        to: ctx.lead.email,
-        subject: ctx.email.subject,
-        body: wrapped.body,
-        headers: {
-          "List-Unsubscribe": `<${wrapped.unsubscribeUrl}>`,
-          "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-        },
-        threadId: ctx.email.threadId ?? undefined,
-      });
+      try {
+        return await sendMessage(ctx.account, accessToken, {
+          from: ctx.user.email,
+          to: ctx.lead.email,
+          subject: ctx.email.subject,
+          body: wrapped.body,
+          headers: {
+            "List-Unsubscribe": `<${wrapped.unsubscribeUrl}>`,
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+          },
+          threadId: ctx.email.threadId ?? undefined,
+        });
+      } catch (err) {
+        // Surface the failure into the emails row so the user can see it in
+        // the UI. We re-throw so Inngest's retry policy still kicks in.
+        const reason = err instanceof Error ? err.message : String(err);
+        await db
+          .update(emails)
+          .set({
+            status: "failed",
+            failedAt: new Date(),
+            failureReason: reason.slice(0, 500),
+          })
+          .where(eq(emails.id, emailId));
+        throw err;
+      }
     });
 
     await step.run("mark-sent", async () => {

@@ -109,6 +109,8 @@ export async function createCampaign(formData: FormData): Promise<void> {
           company: l.company,
           title: l.title,
           notes: l.notes,
+          linkedinUrl: l.linkedinUrl,
+          xUrl: l.xUrl,
           customFields: l.customFields,
           status: "pending" as const,
         }))

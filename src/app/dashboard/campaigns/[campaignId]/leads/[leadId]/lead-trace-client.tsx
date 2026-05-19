@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useTransition } from "react";
 import Link from "next/link";
 import { Icon, Pill } from "@/components/ui/design";
+import { sendNow, reprocessLead } from "./actions";
 
 interface SearchHit {
   url: string;
@@ -28,6 +29,9 @@ interface EmailRow {
   stepIndex: number;
   hookUsed: unknown;
   createdAt: Date | null;
+  sentAt: Date | null;
+  failedAt: Date | null;
+  failureReason: string | null;
 }
 
 interface Lead {
@@ -139,6 +143,41 @@ export function LeadTraceClient({
   const [revealedHooks, setRevealedHooks] = useState(0);
   const [revealedChecks, setRevealedChecks] = useState(0);
   const [draftIdx, setDraftIdx] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const [actionMsg, setActionMsg] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
+
+  function copyEmail(subject: string, body: string) {
+    const text = `Subject: ${subject}\n\n${body}`;
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    });
+  }
+
+  function handleSendNow(emailId: string) {
+    setActionMsg(null);
+    startTransition(async () => {
+      try {
+        await sendNow(emailId);
+        setActionMsg("Re-queued for send. The pipeline is processing it now.");
+      } catch (e) {
+        setActionMsg(e instanceof Error ? e.message : "Failed to send");
+      }
+    });
+  }
+
+  function handleReprocess(leadId: string) {
+    setActionMsg(null);
+    startTransition(async () => {
+      try {
+        await reprocessLead(leadId);
+        setActionMsg("Lead queued for re-research. Refresh in ~60s.");
+      } catch (e) {
+        setActionMsg(e instanceof Error ? e.message : "Failed to reprocess");
+      }
+    });
+  }
 
   const latestEmail = emails[0];
   const eligibleHooks = hooks.filter((h) => h.specificity_score >= 2);
@@ -284,8 +323,19 @@ export function LeadTraceClient({
           </div>
           <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
             {latestEmail && (
-              <Pill tone="good" dot>
-                {latestEmail.status}
+              <Pill
+                tone={
+                  latestEmail.status === "sent"
+                    ? "good"
+                    : latestEmail.status === "failed" || latestEmail.status === "bounced"
+                      ? "bad"
+                      : latestEmail.status === "needs_review"
+                        ? "warn"
+                        : "accent"
+                }
+                dot
+              >
+                {latestEmail.status.replace(/_/g, " ")}
               </Pill>
             )}
             <button
@@ -757,12 +807,25 @@ export function LeadTraceClient({
                       >
                         Hook cited: #01 · person_hook
                       </span>
-                      <span
-                        className="mono"
-                        style={{ fontSize: 11, color: "var(--accent)" }}
-                      >
-                        opus 4.7
-                      </span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span
+                          className="mono"
+                          style={{ fontSize: 11, color: "var(--accent)" }}
+                        >
+                          sonnet 4.6
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() =>
+                            copyEmail(latestEmail.subject, latestEmail.body)
+                          }
+                          style={{ gap: 6, fontSize: 11 }}
+                        >
+                          <Icon name={copied ? "check" : "doc"} size={12} />
+                          {copied ? "Copied" : "Copy email"}
+                        </button>
+                      </div>
                     </div>
                     <div style={{ padding: "22px 24px" }}>
                       <div
@@ -912,9 +975,13 @@ export function LeadTraceClient({
                       >
                         {latestEmail?.status === "sent"
                           ? "Sent."
-                          : latestEmail?.status === "queued"
-                            ? "Queued to send."
-                            : "Draft complete."}
+                          : latestEmail?.status === "failed"
+                            ? "Send failed."
+                            : latestEmail?.status === "needs_review"
+                              ? "Needs your review."
+                              : latestEmail?.status === "queued"
+                                ? "Queued to send."
+                                : "Draft complete."}
                       </h3>
                       <p
                         style={{
@@ -926,16 +993,86 @@ export function LeadTraceClient({
                       >
                         {latestEmail?.status === "sent"
                           ? "If the lead replies, the classifier reads it and either pauses the follow-up or escalates to your inbox."
-                          : "Will send at the next pacing slot, subject to daily quota."}
+                          : latestEmail?.status === "failed"
+                            ? "The send attempt failed. See the error below, then click Send now to retry."
+                            : latestEmail?.status === "needs_review"
+                              ? "Critique flagged this draft. Review the email, then click Send now to deliver it as-is."
+                              : "Will send at the next pacing slot, subject to daily quota."}
                       </p>
                     </div>
-                    <Link href="/dashboard/inbox">
-                      <button className="btn btn-accent" style={{ gap: 8 }}>
-                        See replies
-                        <Icon name="arrow-right" size={15} />
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {latestEmail && (latestEmail.status === "queued" || latestEmail.status === "failed" || latestEmail.status === "needs_review") && (
+                        <button
+                          className="btn btn-accent"
+                          style={{ gap: 8 }}
+                          disabled={isPending}
+                          onClick={() => handleSendNow(latestEmail.id)}
+                        >
+                          {isPending ? "Sending…" : "Send now"}
+                          <Icon name="arrow-right" size={15} />
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-outline"
+                        style={{ gap: 8, borderColor: "rgba(255,255,255,0.3)", color: "var(--paper)" }}
+                        disabled={isPending}
+                        onClick={() => handleReprocess(lead.id)}
+                      >
+                        Re-research
                       </button>
-                    </Link>
+                      <Link href="/dashboard/inbox">
+                        <button className="btn btn-outline" style={{ gap: 8, borderColor: "rgba(255,255,255,0.3)", color: "var(--paper)" }}>
+                          Inbox
+                          <Icon name="arrow-right" size={15} />
+                        </button>
+                      </Link>
+                    </div>
                   </div>
+                  {actionMsg && (
+                    <div
+                      className="mono"
+                      style={{
+                        marginTop: 16,
+                        padding: "10px 14px",
+                        background: "rgba(255,255,255,0.08)",
+                        borderRadius: 4,
+                        fontSize: 12,
+                        opacity: 0.9,
+                      }}
+                    >
+                      {actionMsg}
+                    </div>
+                  )}
+                  {latestEmail?.status === "failed" && latestEmail.failureReason && (
+                    <div
+                      style={{
+                        marginTop: 16,
+                        padding: "14px 16px",
+                        background: "rgba(255, 80, 80, 0.15)",
+                        border: "1px solid rgba(255, 80, 80, 0.4)",
+                        borderRadius: 6,
+                      }}
+                    >
+                      <div
+                        className="mono"
+                        style={{
+                          fontSize: 10.5,
+                          letterSpacing: ".12em",
+                          textTransform: "uppercase",
+                          opacity: 0.75,
+                          marginBottom: 6,
+                        }}
+                      >
+                        Last send error
+                      </div>
+                      <div
+                        className="mono"
+                        style={{ fontSize: 12, lineHeight: 1.5, color: "rgba(255,200,200,0.95)" }}
+                      >
+                        {latestEmail.failureReason}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </>

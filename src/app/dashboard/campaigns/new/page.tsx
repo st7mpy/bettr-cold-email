@@ -262,7 +262,7 @@ export default async function NewCampaignPage({
           <Section
             num={4}
             title="Upload leads"
-            sub="Paste CSV. Required: email. Recommended: name, company, title, notes."
+            sub="Paste CSV. Required: email. Recommended: name, company, title, notes, linkedin_url, x_url (high-signal — scraped directly)."
           >
             <div style={{ position: "relative" }}>
               <textarea
@@ -271,7 +271,7 @@ export default async function NewCampaignPage({
                 name="csvText"
                 rows={9}
                 required
-                placeholder={`email,name,company,title,notes\npriya@graphroot.dev,Priya Mehta,Graphroot,CTO,\nmarcus@vellum-labs.com,Marcus Vance,Vellum Labs,VP Eng,`}
+                placeholder={`email,name,company,title,notes,linkedin_url,x_url\npriya@graphroot.dev,Priya Mehta,Graphroot,CTO,,https://linkedin.com/in/priyamehta,\nmarcus@vellum-labs.com,Marcus Vance,Vellum Labs,VP Eng,,https://linkedin.com/in/marcusvance,https://x.com/marcusv`}
               />
               <div
                 style={{

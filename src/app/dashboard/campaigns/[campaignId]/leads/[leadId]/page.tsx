@@ -58,6 +58,9 @@ export default async function LeadTracePage({
       stepIndex: emails.stepIndex,
       hookUsed: emails.hookUsed,
       createdAt: emails.createdAt,
+      sentAt: emails.sentAt,
+      failedAt: emails.failedAt,
+      failureReason: emails.failureReason,
     })
     .from(emails)
     .where(eq(emails.leadId, leadId))

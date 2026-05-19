@@ -8,6 +8,8 @@ export interface ParsedLead {
   company: string | null;
   title: string | null;
   notes: string | null;
+  linkedinUrl: string | null;
+  xUrl: string | null;
   customFields: Record<string, string>;
 }
 
@@ -25,7 +27,9 @@ type MappedField =
   | "last"
   | "company"
   | "title"
-  | "notes";
+  | "notes"
+  | "linkedin"
+  | "x";
 
 const HEADER_MAP: Record<string, MappedField> = {
   email: "email",
@@ -53,6 +57,17 @@ const HEADER_MAP: Record<string, MappedField> = {
   position: "title",
   notes: "notes",
   context: "notes",
+  linkedin: "linkedin",
+  "linkedin url": "linkedin",
+  "linkedin_url": "linkedin",
+  linkedinurl: "linkedin",
+  li: "linkedin",
+  x: "x",
+  "x url": "x",
+  "x_url": "x",
+  twitter: "x",
+  "twitter url": "x",
+  "twitter_url": "x",
 };
 
 function normalize(h: string): string {
@@ -85,6 +100,8 @@ export function parseCsv(input: string): ParseResult {
       company: null,
       title: null,
       notes: null,
+      linkedinUrl: null,
+      xUrl: null,
       customFields: {},
     };
     let firstName = "";
@@ -108,6 +125,10 @@ export function parseCsv(input: string): ParseResult {
         lead.title = value || null;
       } else if (mapped === "notes") {
         lead.notes = value || null;
+      } else if (mapped === "linkedin") {
+        lead.linkedinUrl = value || null;
+      } else if (mapped === "x") {
+        lead.xUrl = value || null;
       } else if (key && value) {
         lead.customFields[key] = value;
       }
